@@ -1,0 +1,29 @@
+# Godot generated data
+.godot/
+.import/
+*.translation
+
+# Local tools and export templates
+.tools/
+
+# Builds and packages
+builds/
+dist/
+*.pck
+*.zip
+
+# Local editor/OS files
+.vscode/
+.idea/
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+override.cfg
+

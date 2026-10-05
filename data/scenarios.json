@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "scenario_id": "prototype_diagnostics",
+      "title": "Keyboard Diagnostics",
+      "intro_text": "The input bus is collapsing. Restore the messages.",
+      "target_phrases": ["basic_cat", "space_game_over", "repeat_banana", "capital_cat"],
+      "dialogue": [],
+      "time_limit": 360,
+      "keyboard_layout": "qwerty_full",
+      "active_modifiers": [],
+      "hazard_configuration": {},
+      "music": "prototype_pulse",
+      "completion_condition": "all_phrases",
+      "failure_condition": "timer_zero",
+      "optional_boss": "",
+      "unlock_requirements": []
+    }
+  ]
+}
+
