@@ -1,8 +1,9 @@
 class_name GameHud
 extends CanvasLayer
+signal resume_requested
+signal lobby_requested
 
-var target_label: RichTextLabel
-var letterbox_label: RichTextLabel
+var letterbox_view: LetterboxView
 var expected_label: Label
 var timer_label: Label
 var score_label: Label
@@ -13,193 +14,126 @@ var countdown_label: Label
 var overlay_panel: PanelContainer
 var overlay_title: Label
 var overlay_body: Label
+var _pause_actions: HBoxContainer
+var _event_remaining := 0.0
+var _countdown_remaining := 0.0
 
 func _ready() -> void:
 	layer = 10
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_build_hud()
-
-func _build_hud() -> void:
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
-
-	var top_panel := PanelContainer.new()
-	top_panel.position = Vector2(245, 18)
-	top_panel.size = Vector2(1430, 190)
-	top_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.025, 0.04, 0.1, 0.91), Color("#394b86")))
-	root.add_child(top_panel)
-
-	var top_box := VBoxContainer.new()
-	top_box.add_theme_constant_override("separation", 5)
-	top_panel.add_child(top_box)
-	target_label = _rich(34)
-	target_label.custom_minimum_size.y = 48
-	top_box.add_child(target_label)
-	letterbox_label = _rich(38)
-	letterbox_label.custom_minimum_size.y = 56
-	top_box.add_child(letterbox_label)
-	expected_label = _label("", 25)
-	expected_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	top_box.add_child(expected_label)
-
-	timer_label = _label("TIME 06:00", 30)
-	timer_label.position = Vector2(35, 32)
-	root.add_child(timer_label)
-	score_label = _label("SCORE 0000", 28)
-	score_label.position = Vector2(35, 76)
-	root.add_child(score_label)
-
-	modifier_label = _label("", 24)
-	modifier_label.position = Vector2(1680, 32)
-	modifier_label.size = Vector2(210, 140)
-	modifier_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	root.add_child(modifier_label)
-
-	players_label = _label("", 22)
-	players_label.position = Vector2(30, 970)
-	players_label.size = Vector2(1860, 70)
-	root.add_child(players_label)
-
-	event_label = _label("", 26)
-	event_label.position = Vector2(460, 885)
-	event_label.size = Vector2(1000, 60)
-	event_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(event_label)
-
-	countdown_label = _label("", 92)
-	countdown_label.position = Vector2(710, 410)
-	countdown_label.size = Vector2(500, 160)
-	countdown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	countdown_label.add_theme_color_override("font_color", Color("#fff36a"))
-	root.add_child(countdown_label)
-
+	var top := Panel.new()
+	top.position = Vector2(280, 24)
+	top.size = Vector2(1360, 242)
+	top.add_theme_stylebox_override("panel", UiStyle.panel())
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(top)
+	letterbox_view = LetterboxView.new()
+	letterbox_view.position = Vector2(20, 42)
+	letterbox_view.size = Vector2(1320, 150)
+	letterbox_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(letterbox_view)
+	var heading := UiStyle.label("THE LETTERBOX", 24, true)
+	heading.position = Vector2(0, 10)
+	heading.size.x = 1360
+	top.add_child(heading)
+	expected_label = UiStyle.label("", 24)
+	expected_label.position = Vector2(20, 194)
+	expected_label.size = Vector2(1320, 36)
+	top.add_child(expected_label)
+	timer_label = _placed_label(root, "", Vector2(24, 50), Vector2(232, 55), 42)
+	score_label = _placed_label(root, "", Vector2(24, 108), Vector2(232, 90), 26)
+	modifier_label = _placed_label(root, "", Vector2(1654, 48), Vector2(240, 150), 26)
+	event_label = _placed_label(root, "", Vector2(260, 944), Vector2(1400, 40), 28)
+	players_label = _placed_label(root, "", Vector2(30, 1000), Vector2(1860, 64), 22)
+	countdown_label = _placed_label(root, "", Vector2(560, 490), Vector2(800, 120), 76)
+	countdown_label.add_theme_font_override("font", UiStyle.DISPLAY)
+	countdown_label.add_theme_color_override("font_shadow_color", UiStyle.CREAM)
+	countdown_label.add_theme_constant_override("shadow_offset_x", 3)
+	countdown_label.add_theme_constant_override("shadow_offset_y", 3)
 	overlay_panel = PanelContainer.new()
-	overlay_panel.position = Vector2(540, 345)
-	overlay_panel.size = Vector2(840, 350)
-	overlay_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.02, 0.03, 0.09, 0.97), Color("#71e9ff")))
-	overlay_panel.visible = false
+	overlay_panel.position = Vector2(510, 364)
+	overlay_panel.size = Vector2(900, 342)
+	overlay_panel.add_theme_stylebox_override("panel", UiStyle.panel())
 	root.add_child(overlay_panel)
-	var overlay_box := VBoxContainer.new()
-	overlay_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	overlay_panel.add_child(overlay_box)
-	overlay_title = _label("", 48)
-	overlay_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	overlay_box.add_child(overlay_title)
-	overlay_body = _label("", 26)
-	overlay_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 22)
+	overlay_panel.add_child(box)
+	overlay_title = UiStyle.label("", 48, true)
+	box.add_child(overlay_title)
+	overlay_body = UiStyle.label("", 27)
 	overlay_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	overlay_box.add_child(overlay_body)
+	box.add_child(overlay_body)
+	_pause_actions = HBoxContainer.new()
+	_pause_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	_pause_actions.add_theme_constant_override("separation", 22)
+	box.add_child(_pause_actions)
+	_pause_actions.add_child(UiStyle.button("RESUME", func() -> void: resume_requested.emit()))
+	_pause_actions.add_child(UiStyle.button("LOBBY", func() -> void: lobby_requested.emit()))
+	hide_overlay()
 
-func update_letterbox(snapshot: Dictionary) -> void:
-	var target: String = snapshot.target
-	var current: String = snapshot.current
-	var correct_count: int = snapshot.correct_prefix_length
-	var target_markup := "[center][color=#aab5d8]TARGET[/color]  "
-	for index in range(target.length()):
-		var character := target.substr(index, 1)
-		if index < correct_count:
-			target_markup += "[color=#65ef9d]%s[/color]" % _visible(character)
-		elif index == correct_count:
-			target_markup += "[bgcolor=#fff36a][color=#13162d]%s[/color][/bgcolor]" % _visible(character)
-		else:
-			target_markup += "[color=#7883a9]%s[/color]" % _visible(character)
-	target_label.text = target_markup + "[/center]"
+func _placed_label(root: Control, value: String, point: Vector2, extent: Vector2, font_size: int) -> Label:
+	var label := UiStyle.label(value, font_size)
+	label.position = point
+	label.size = extent
+	root.add_child(label)
+	return label
 
-	var input_markup := "[center][color=#aab5d8]LETTERBOX[/color]  "
-	if current.is_empty():
-		input_markup += "[color=#586383]_[/color]"
-	for index in range(current.length()):
-		var character := current.substr(index, 1)
-		var color := "#65ef9d" if index < correct_count else "#ff557c"
-		input_markup += "[color=%s]%s[/color]" % [color, _visible(character)]
-	letterbox_label.text = input_markup + "[/center]"
-	var expected := str(snapshot.expected)
-	expected_label.text = (
-		"INPUT INVALID — HOLD BACKSPACE"
-		if snapshot.has_error
-		else ("READY — REACH ENTER" if snapshot.can_submit else "NEXT: %s" % _visible(expected))
-	)
-	expected_label.add_theme_color_override("font_color", Color("#ff557c") if snapshot.has_error else Color("#e5e9ff"))
+func _process(delta: float) -> void:
+	_event_remaining = maxf(_event_remaining - delta, 0.0)
+	if _event_remaining <= 0.0:
+		event_label.text = ""
+	_countdown_remaining = maxf(_countdown_remaining - delta, 0.0)
+	if _countdown_remaining <= 0.0:
+		countdown_label.text = ""
 
-func update_status(time_remaining: float, score: int, caps: bool, shift: bool, backspace_ready: bool) -> void:
-	var minutes := int(time_remaining) / 60
-	var seconds := int(time_remaining) % 60
-	timer_label.text = "TIME  %02d:%02d" % [minutes, seconds]
-	score_label.text = "SCORE  %05d" % max(score, 0)
-	var states: Array[String] = []
-	if caps:
-		states.push_back("CAPS LOCK")
-	if shift:
-		states.push_back("SHIFT HELD")
-	states.push_back("BACKSPACE READY" if backspace_ready else "BACKSPACE COOLING")
-	modifier_label.text = "\n".join(states)
+func update_letterbox(snapshot: Dictionary, caps: bool, shift: bool) -> void:
+	letterbox_view.update_snapshot(snapshot)
+	var hint := TypingRules.modifier_hint(str(snapshot.expected), caps, shift)
+	if snapshot.has_error:
+		expected_label.text = "A mistake stays in the box. Hold BACKSPACE to undo and repair."
+	elif snapshot.can_submit:
+		expected_label.text = "Perfect match! Hold ENTER to send it."
+	elif hint == "shift":
+		expected_label.text = "A friend holds SHIFT while you charge the highlighted key."
+	elif hint == "caps_off":
+		expected_label.text = "Turn CAPS LOCK off for the next letter."
+	elif hint == "release_shift":
+		expected_label.text = "Release SHIFT for the next lowercase letter."
+	else:
+		expected_label.text = "Stand on the highlighted key for 5 seconds. Jump across holes."
+
+func update_match(time_left: float, score: int, round_index: int, total: int, caps: bool, shift: bool) -> void:
+	timer_label.text = "%02d:%02d" % [int(ceil(time_left)) / 60, int(ceil(time_left)) % 60]
+	score_label.text = "ROUND %d / %d\nSCORE %05d" % [round_index + 1, total, score]
+	modifier_label.text = "CAPS %s\nSHIFT %s\nEsc / Start: pause" % ["ON" if caps else "off", "HELD" if shift else "off"]
 
 func update_players(players: Array[PlayerController]) -> void:
-	var text_parts: Array[String] = []
+	var lines: Array[String] = []
 	for player in players:
-		var status := "CONNECTED" if player.connected else "DISCONNECTED"
-		text_parts.push_back("%s P%d  %s  FALLS %d" % [
-			GameConfig.PLAYER_SYMBOLS[player.player_id],
-			player.player_id + 1,
-			status,
-			player.falls,
-		])
-	players_label.text = "     ".join(text_parts)
+		var status := "disconnected" if not player.connected else ("respawning" if player.falling else InputSource.device_label(player.device_id))
+		lines.push_back("P%d %s  %s" % [player.player_id + 1, Cast.display_name(player.player_id), status])
+	players_label.text = "    •    ".join(lines)
 
-func show_event(message: String, color := Color.WHITE, duration := 1.4) -> void:
-	event_label.text = message
+func show_event(value: String, color := UiStyle.INK, duration := GameConfig.EVENT_DURATION) -> void:
+	event_label.text = value
 	event_label.add_theme_color_override("font_color", color)
-	var expected_message := message
-	get_tree().create_timer(duration).timeout.connect(func() -> void:
-		if event_label.text == expected_message:
-			event_label.text = ""
-	)
+	_event_remaining = duration
 
-func show_countdown(text_value: String) -> void:
-	countdown_label.text = text_value
+func show_countdown(value: String) -> void:
+	countdown_label.text = value
+	_countdown_remaining = GameConfig.COUNTDOWN_DURATION
 
-func show_overlay(title_text: String, body_text: String) -> void:
-	overlay_title.text = title_text
-	overlay_body.text = body_text
+func show_overlay(title: String, body: String, paused := false) -> void:
+	overlay_title.text = title
+	overlay_body.text = body
+	_pause_actions.visible = paused
 	overlay_panel.visible = true
+	countdown_label.text = ""
 
 func hide_overlay() -> void:
 	overlay_panel.visible = false
-
-func _label(text_value: String, font_size: int) -> Label:
-	var label := Label.new()
-	label.text = text_value
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", Color("#edf1ff"))
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	label.add_theme_constant_override("shadow_offset_x", 2)
-	label.add_theme_constant_override("shadow_offset_y", 2)
-	return label
-
-func _rich(font_size: int) -> RichTextLabel:
-	var label := RichTextLabel.new()
-	label.bbcode_enabled = true
-	label.fit_content = true
-	label.scroll_active = false
-	label.add_theme_font_size_override("normal_font_size", font_size)
-	return label
-
-func _panel_style(color: Color, border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.border_color = border
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(12)
-	style.content_margin_left = 22
-	style.content_margin_right = 22
-	style.content_margin_top = 14
-	style.content_margin_bottom = 14
-	return style
-
-func _visible(character: String) -> String:
-	if character == " ":
-		return "␠"
-	return character.replace("[", "\\[").replace("]", "\\]")
-

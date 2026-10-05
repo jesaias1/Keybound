@@ -6,9 +6,9 @@ Chosen engine: Godot 4.7.1 Standard (GDScript)
 
 ## Decision
 
-Use Godot 4.7.1 Standard. It is the current stable maintenance release, is
+Use the pinned Godot 4.7.1 Standard. It is
 royalty-free under the MIT license, is self-contained on Windows, and provides
-the CharacterBody3D, controller, UI, resource, signal, and high-level multiplayer
+the CharacterBody2D, controller, UI, resource, signal, and high-level multiplayer
 features needed by this vertical slice. GDScript and Godot's text scene/resource
 formats make fast solo iteration and reliable automated repository edits simple.
 
@@ -38,18 +38,19 @@ key transitions, repairs, capitalization, score, timers, spawns, and match flow.
 Clients send timestamped input intents and receive authoritative snapshots/events.
 Local play already routes input through player-device adapters into an
 authoritative MatchController rather than letting UI or player scenes edit rules.
-Online implementation waits until Phase 5.
+The owner authorized browser online implementation on 2026-10-06.
 
 ## Limitations
 
-- Local couch play is the only implemented transport in Phase 1.
+- Windows supports local couch play; browser builds also support online rooms.
 - Keyboard/controller mappings may vary by platform and require hardware checks.
 - Primitive runtime visuals prioritize readability over production art.
-- Godot 3D physics and controller edge cases require physical group playtesting.
+- The 2D support/jump model and controller edge cases require physical group playtesting.
 - Export templates are a separate local download.
 
 ## Dependencies
 
-No runtime plugins or third-party libraries. Development requires only the
-matching Godot 4.7.1 Standard editor and export templates.
+No Godot plugins. Native development requires Godot 4.7.1 Standard and export
+templates. Browser deployment uses Node >=22, the pinned Convex SDK, Convex Free
+and browser-native WebRTC with free STUN. No paid service.
 

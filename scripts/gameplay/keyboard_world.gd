@@ -1,223 +1,88 @@
 class_name KeyboardWorld
-extends Node3D
-
-signal emergency_repair(key: KeyPlatform)
-
-const UNIT := 1.55
-const ROW_GAP := 1.58
+extends Node2D
 
 var keys: Array[KeyPlatform] = []
 var keys_by_id: Dictionary = {}
 var high_contrast := true
+var field_size := Vector2(KeyboardLayout.width_units(), KeyboardLayout.row_count()) * GameConfig.KEY_UNIT
 
 func _ready() -> void:
-	_build_keyboard()
-	_build_environment()
-	_assign_neighbors()
-
-func _build_keyboard() -> void:
-	var rows: Array = [
-		[
-			_key("esc", "Esc", "", "disabled", 1.0),
-			_key("1", "1", "1"), _key("2", "2", "2"), _key("3", "3", "3"),
-			_key("4", "4", "4"), _key("5", "5", "5"), _key("6", "6", "6"),
-			_key("7", "7", "7"), _key("8", "8", "8"), _key("9", "9", "9"),
-			_key("0", "0", "0"), _key("minus", "-", "-", "punctuation"),
-			_key("equals", "=", "=", "punctuation"),
-			_key("backspace", "BACKSPACE", "", "backspace", 2.25),
-		],
-		[
-			_key("tab", "Tab", "", "disabled", 1.45),
-			_key("q", "Q", "q"), _key("w", "W", "w"), _key("e", "E", "e"),
-			_key("r", "R", "r"), _key("t", "T", "t"), _key("y", "Y", "y"),
-			_key("u", "U", "u"), _key("i", "I", "i"), _key("o", "O", "o"),
-			_key("p", "P", "p"), _key("lbracket", "[", "[", "punctuation"),
-			_key("rbracket", "]", "]", "punctuation"),
-			_key("backslash", "\\", "\\", "punctuation", 1.8),
-		],
-		[
-			_key("caps", "CAPS", "", "caps_lock", 1.85),
-			_key("a", "A", "a"), _key("s", "S", "s"), _key("d", "D", "d"),
-			_key("f", "F", "f"), _key("g", "G", "g"), _key("h", "H", "h"),
-			_key("j", "J", "j"), _key("k", "K", "k"), _key("l", "L", "l"),
-			_key("semicolon", ";", ";", "punctuation"),
-			_key("apostrophe", "'", "'", "punctuation"),
-			_key("enter", "ENTER", "", "enter", 2.65),
-		],
-		[
-			_key("shift_left", "SHIFT", "", "shift", 2.45),
-			_key("z", "Z", "z"), _key("x", "X", "x"), _key("c", "C", "c"),
-			_key("v", "V", "v"), _key("b", "B", "b"), _key("n", "N", "n"),
-			_key("m", "M", "m"), _key("comma", ",", ",", "punctuation"),
-			_key("period", ".", ".", "punctuation"),
-			_key("slash", "/", "/", "punctuation"),
-			_key("shift_right", "SHIFT", "", "shift", 3.05),
-		],
-		[
-			_key("ctrl_left", "Ctrl", "", "disabled", 1.35),
-			_key("alt_left", "Alt", "", "disabled", 1.3),
-			_key("space", "SPACE", " ", "space", 7.7),
-			_key("alt_right", "Alt", "", "disabled", 1.3),
-			_key("ctrl_right", "Ctrl", "", "disabled", 1.35),
-		],
-	]
-
-	for row_index in range(rows.size()):
-		var row: Array = rows[row_index]
-		var total_units := 0.0
-		for data: Dictionary in row:
-			total_units += float(data.width_units)
-		var cursor := -total_units * UNIT * 0.5
-		for data: Dictionary in row:
-			var width_units := float(data.width_units)
-			var width := width_units * UNIT - 0.13
-			var center_x := cursor + width_units * UNIT * 0.5
-			cursor += width_units * UNIT
-			data.width = width
-			var key := KeyPlatform.new()
-			add_child(key)
-			key.setup(data, Vector3(center_x, 0.0, (row_index - 2.0) * ROW_GAP))
-			keys.push_back(key)
-			keys_by_id[key.key_id] = key
-
-func _build_environment() -> void:
-	var void_mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(28.0, 0.3, 11.0)
-	void_mesh.mesh = box
-	void_mesh.position.y = -3.0
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("#060914")
-	material.emission_enabled = true
-	material.emission = Color("#080b1f")
-	material.emission_energy_multiplier = 0.6
-	void_mesh.material_override = material
-	add_child(void_mesh)
-
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-52.0, -24.0, 0.0)
-	light.light_energy = 1.25
-	light.shadow_enabled = true
-	add_child(light)
-
-	var world_environment := WorldEnvironment.new()
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color("#030612")
-	environment.background_energy_multiplier = 0.45
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("#9ca9ff")
-	environment.ambient_light_energy = 0.42
-	world_environment.environment = environment
-	add_child(world_environment)
-
-func _assign_neighbors() -> void:
+	for data in KeyboardLayout.build():
+		var key := KeyPlatform.new()
+		key.setup(data, Vector2((float(data.x_units) + float(data.width_units) * 0.5) * GameConfig.KEY_UNIT - field_size.x * 0.5, (float(data.row) + 0.5) * GameConfig.KEY_UNIT - field_size.y * 0.5))
+		add_child(key)
+		keys.push_back(key)
+		keys_by_id[key.key_id] = key
 	for key in keys:
-		var candidates: Array[Dictionary] = []
 		for other in keys:
-			if other == key:
-				continue
-			var distance := Vector2(key.position.x, key.position.z).distance_to(Vector2(other.position.x, other.position.z))
-			if distance < 2.65:
-				candidates.push_back({"id": other.key_id, "distance": distance})
-		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.distance < b.distance)
-		key.neighboring_keys.clear()
-		for index in range(mini(candidates.size(), 8)):
-			key.neighboring_keys.push_back(candidates[index].id)
+			if other != key and key.contains_point(other.position, GameConfig.KEY_UNIT * 0.6):
+				key.neighboring_keys.push_back(other.key_id)
 
-func _key(id: String, label: String, symbol_value: String, type := "character", width_units := 1.0) -> Dictionary:
-	return {
-		"id": id,
-		"label": label,
-		"symbol": symbol_value,
-		"type": type,
-		"width_units": width_units,
-	}
+func _draw() -> void:
+	draw_rect(Rect2(Vector2(-2000, -1600), Vector2(4000, 3200)), Color("#e5d4c0"))
+	for y in range(-1300, 1500, 70):
+		draw_line(Vector2(-2000, y), Vector2(2000, y + 14), Color("#dcc9b6"), 2)
+	var case_rect := Rect2(-field_size * 0.5, field_size).grow(GameConfig.CASE_PADDING)
+	_box(Rect2(case_rect.position + Vector2(0, 30), case_rect.size), Color("#bba596"), 32)
+	_box(Rect2(case_rect.position + Vector2(0, 18), case_rect.size), Color("#66536c"), 32)
+	_box(case_rect, Color("#978394"), 32)
+	_box(case_rect.grow(-15), Color("#594960"), 23)
 
-func find_key_at(world_position: Vector3) -> KeyPlatform:
-	if world_position.y < -0.2 or world_position.y > 2.8:
-		return null
+func _box(rect: Rect2, color: Color, radius: int) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(radius)
+	draw_style_box(style, rect)
+
+func get_key(id: String) -> KeyPlatform:
+	return keys_by_id.get(id) as KeyPlatform
+
+func find_key_at(point: Vector2, solid_only := true) -> KeyPlatform:
+	# Exact footprints first. Forgiveness only spans the tiny plate gaps.
 	for key in keys:
-		if not key.is_occupiable():
-			continue
-		var half := key.size * 0.5
-		if absf(world_position.x - key.position.x) <= half.x and absf(world_position.z - key.position.z) <= half.z:
+		if (not solid_only or key.is_solid()) and key.contains_point(point):
+			return key
+	# A hole must never borrow support from a neighbour's expanded rectangle.
+	for key in keys:
+		if not key.is_solid() and key.contains_point(point):
+			return null
+	for key in keys:
+		if (not solid_only or key.is_solid()) and key.contains_point(point, GameConfig.EDGE_FORGIVENESS):
 			return key
 	return null
 
-func get_key(key_id: String) -> KeyPlatform:
-	return keys_by_id.get(key_id) as KeyPlatform
-
-func available_keys_for_symbol(symbol_value: String) -> Array[KeyPlatform]:
-	var result: Array[KeyPlatform] = []
+func choose_safe_spawn(used_positions: Array[Vector2] = []) -> KeyPlatform:
+	var best: KeyPlatform
+	var best_distance := -1.0
+	# Prefer quiet modifier/inert keys; never drop someone onto the next letter.
 	for key in keys:
-		if not key.is_occupiable():
+		if not key.is_occupiable() or key.key_type not in ["inert", "shift", "space"]:
 			continue
-		if symbol_value == " " and key.key_type == "space":
-			result.push_back(key)
-		elif key.symbol.to_lower() == symbol_value.to_lower() and not key.symbol.is_empty():
-			result.push_back(key)
-	return result
-
-func destroyed_keys_for_symbol(symbol_value: String) -> Array[KeyPlatform]:
-	var result: Array[KeyPlatform] = []
-	for key in keys:
-		if key.state != KeyState.State.DESTROYED:
-			continue
-		if (symbol_value == " " and key.key_type == "space") or key.symbol.to_lower() == symbol_value.to_lower():
-			result.push_back(key)
-	return result
-
-func choose_safe_spawn(excluded: Array[Vector3], avoid_symbol := "") -> KeyPlatform:
-	var candidates: Array[KeyPlatform] = []
-	for key in keys:
-		if not key.is_occupiable() or key.key_type != "character":
-			continue
-		if not avoid_symbol.is_empty() and key.symbol.to_lower() == avoid_symbol.to_lower():
-			continue
-		var separated := true
-		for point in excluded:
-			if key.position.distance_to(point) < 2.1:
-				separated = false
-				break
-		if separated:
-			candidates.push_back(key)
-	if candidates.is_empty():
-		for key in keys:
-			if key.is_occupiable() and key.key_type == "character":
-				candidates.push_back(key)
-	if candidates.is_empty():
-		return null
-	return candidates[randi() % candidates.size()]
-
-func update_target(expected: String, invalid_input: bool, can_submit: bool, caps_active: bool) -> void:
-	for key in keys:
-		var targeted := false
-		if invalid_input:
-			targeted = key.key_type == "backspace"
-		elif can_submit:
-			targeted = key.key_type == "enter"
-		elif expected == " ":
-			targeted = key.key_type == "space"
-		elif not expected.is_empty():
-			targeted = key.symbol.to_lower() == expected.to_lower()
-		key.set_targeted(targeted, high_contrast)
-		key.set_case(caps_active)
-
-func repair_required_key(expected: String) -> KeyPlatform:
-	var destroyed := destroyed_keys_for_symbol(expected)
-	if destroyed.is_empty():
-		return null
-	var key: KeyPlatform = destroyed.front()
-	if key.repair():
-		emergency_repair.emit(key)
-		return key
-	return null
+		var distance := 10000.0
+		for point in used_positions:
+			distance = minf(distance, point.distance_to(key.position))
+		if distance > best_distance:
+			best = key
+			best_distance = distance
+	return best
 
 func reset_all_keys() -> void:
 	for key in keys:
-		if key.state in [KeyState.State.DESTROYED, KeyState.State.CRACKING]:
-			key.repair()
-		else:
-			key.set_charge_progress(0.0)
-			key.cooldown_remaining = 0.0
+		key.reset()
+
+func update_targets(expected: String, error: bool, ready: bool, caps: bool, shift: bool) -> void:
+	var target_id := KeyboardLayout.key_for_character(expected)
+	var hint := TypingRules.modifier_hint(expected, caps, shift)
+	for key in keys:
+		key.set_case(caps, shift)
+		key.set_special_active(caps if key.key_type == "caps" else key.state == KeyState.State.HELD)
+		var targeted := key.key_id == target_id
+		if error:
+			targeted = key.key_type == "backspace"
+		elif ready:
+			targeted = key.key_type == "enter"
+		elif hint == "shift":
+			targeted = key.key_type == "shift" or targeted
+		elif hint == "caps_off":
+			targeted = key.key_type == "caps"
+		key.set_targeted(targeted, high_contrast)

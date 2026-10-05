@@ -1,16 +1,16 @@
 class_name MatchStateMachine
 extends RefCounted
+## Explicit match flow. Menu navigation lives in Main, not here.
 
 enum State {
 	BOOT,
-	MAIN_MENU,
-	LOBBY,
-	MODE_SELECT,
-	COUNTDOWN,
+	PREVIEW,        ## Phrase shown, team plans the route.
+	COUNTDOWN,      ## Critters drop in, 3-2-1.
 	PLAYING,
-	PHRASE_COMPLETE,
-	MATCH_COMPLETE,
-	RESULTS,
+	CELEBRATING,    ## Enter accepted: slow-mo and cheering.
+	FAILED,         ## Timer ran out.
+	ROUND_RESULTS,
+	MATCH_OVER,
 	PAUSED,
 }
 
@@ -18,16 +18,18 @@ var current: State = State.BOOT
 var _state_before_pause: State = State.PLAYING
 
 const VALID_TRANSITIONS := {
-	State.BOOT: [State.MAIN_MENU],
-	State.MAIN_MENU: [State.LOBBY],
-	State.LOBBY: [State.MAIN_MENU, State.MODE_SELECT],
-	State.MODE_SELECT: [State.LOBBY, State.COUNTDOWN],
-	State.COUNTDOWN: [State.PLAYING, State.LOBBY, State.PAUSED],
-	State.PLAYING: [State.PHRASE_COMPLETE, State.MATCH_COMPLETE, State.PAUSED],
-	State.PHRASE_COMPLETE: [State.COUNTDOWN, State.MATCH_COMPLETE, State.PAUSED],
-	State.MATCH_COMPLETE: [State.RESULTS],
-	State.RESULTS: [State.LOBBY, State.COUNTDOWN, State.MAIN_MENU],
-	State.PAUSED: [State.COUNTDOWN, State.PLAYING, State.PHRASE_COMPLETE, State.LOBBY],
+	State.BOOT: [State.PREVIEW],
+	State.PREVIEW: [State.COUNTDOWN, State.PAUSED],
+	State.COUNTDOWN: [State.PLAYING, State.PAUSED],
+	State.PLAYING: [State.CELEBRATING, State.FAILED, State.PAUSED],
+	State.CELEBRATING: [State.ROUND_RESULTS, State.PAUSED],
+	State.FAILED: [State.ROUND_RESULTS, State.PAUSED],
+	State.ROUND_RESULTS: [State.PREVIEW, State.MATCH_OVER, State.PAUSED],
+	State.MATCH_OVER: [State.PREVIEW],
+	State.PAUSED: [
+		State.PREVIEW, State.COUNTDOWN, State.PLAYING, State.CELEBRATING,
+		State.FAILED, State.ROUND_RESULTS,
+	],
 }
 
 func transition(next: State) -> bool:
@@ -46,6 +48,8 @@ func resume() -> bool:
 		return false
 	return transition(_state_before_pause)
 
+func force(next: State) -> void:
+	current = next
+
 static func can_transition(from_state: State, to_state: State) -> bool:
 	return to_state in VALID_TRANSITIONS.get(from_state, [])
-

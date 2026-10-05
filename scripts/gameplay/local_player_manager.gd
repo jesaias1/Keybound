@@ -11,6 +11,8 @@ func _ready() -> void:
 	Input.joy_connection_changed.connect(_on_joy_connection_changed)
 
 func try_join(device_id: int) -> int:
+	if device_id < InputSource.KEYBOARD:
+		return -1
 	if device_id in joined_devices:
 		return joined_devices.find(device_id)
 	if joined_devices.size() >= GameConfig.MAX_PLAYERS:
@@ -29,6 +31,16 @@ func leave_player(player_id: int) -> bool:
 
 func has_device(device_id: int) -> bool:
 	return device_id in joined_devices
+
+func device_connected(device_id: int) -> bool:
+	return device_id == InputSource.KEYBOARD or device_id in Input.get_connected_joypads()
+
+func connected_count() -> int:
+	var count := 0
+	for device in joined_devices:
+		if device_connected(device):
+			count += 1
+	return count
 
 func player_specs() -> Array[Dictionary]:
 	var specs: Array[Dictionary] = []

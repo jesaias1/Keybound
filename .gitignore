@@ -11,6 +11,11 @@ builds/
 dist/
 *.pck
 *.zip
+!deployment/templates/web_nothreads_release.zip
+.vercel/
+.web-build/
+web-build/
+node_modules/
 
 # Local editor/OS files
 .vscode/
@@ -27,3 +32,5 @@ desktop.ini
 !.env.example
 override.cfg
 
+
+.vercel

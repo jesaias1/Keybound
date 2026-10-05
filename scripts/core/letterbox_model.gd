@@ -1,5 +1,8 @@
 class_name LetterboxModel
 extends RefCounted
+## Authoritative shared Letterbox. Wrong characters are kept, never corrected
+## automatically. History is LIFO so Backspace can undo the latest character
+## and restore the exact key it came from.
 
 var target: String = ""
 var current: String = ""
@@ -10,12 +13,14 @@ func begin_phrase(new_target: String) -> void:
 	current = ""
 	history.clear()
 
+## `extra` carries presentation/repair metadata (e.g. previous key damage).
 func enter_character(
 	symbol: String,
 	key_id: String,
 	player_id: int,
 	time_entered: float,
-	previous_caps_state: bool
+	previous_caps_state: bool,
+	extra: Dictionary = {}
 ) -> Dictionary:
 	var was_valid_prefix := target.begins_with(current)
 	var is_correct := (
@@ -30,7 +35,9 @@ func enter_character(
 		"player_id": player_id,
 		"time_entered": time_entered,
 		"previous_caps_state": previous_caps_state,
+		"index": current.length(),
 	}
+	entry.merge(extra)
 	current += symbol
 	history.push_back(entry)
 	return entry
@@ -44,10 +51,11 @@ func undo_latest() -> Dictionary:
 	return entry
 
 func expected_character() -> String:
-	var correct_count := correct_prefix_length()
-	if correct_count >= target.length():
+	if has_error():
 		return ""
-	return target.substr(correct_count, 1)
+	if current.length() >= target.length():
+		return ""
+	return target.substr(current.length(), 1)
 
 func correct_prefix_length() -> int:
 	var length := mini(current.length(), target.length())
@@ -59,21 +67,21 @@ func correct_prefix_length() -> int:
 func has_error() -> bool:
 	return not target.begins_with(current)
 
+func error_count() -> int:
+	return current.length() - correct_prefix_length()
+
 func can_submit() -> bool:
 	return current == target
 
 func remaining() -> String:
-	var prefix := correct_prefix_length()
-	return target.substr(prefix)
+	return target.substr(correct_prefix_length())
 
 func snapshot() -> Dictionary:
 	return {
 		"target": target,
 		"current": current,
-		"history": history.duplicate(true),
 		"expected": expected_character(),
 		"correct_prefix_length": correct_prefix_length(),
 		"has_error": has_error(),
 		"can_submit": can_submit(),
 	}
-
