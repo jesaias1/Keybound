@@ -59,3 +59,6 @@ Two independent automated browser sessions establish WebRTC and start one shared
 match. Simulated guest keyboard input moves P2 on the authoritative host.
 No physical two-PC/network or controller result is claimed. STUN-only connections
 across restrictive NAT may fail; no paid TURN relay is configured.
+Git-connected production build/export succeeded on Vercel Linux. Public URL:
+https://keybound-kappa.vercel.app. Two browser sessions also verified live room
+join/start, shared pause/resume and matching timer; browser consoles were clean.

@@ -86,6 +86,8 @@ Ejeren bad om samme kamp på to pc'er over nettet og godkendte Convex Free.
 Vercel-projektet keybound er Git-forbundet til jesaias1/Keybound, main.
 Convex-ressourcen keybound er oprettet, forbundet og rumfunktionerne deployet.
 Vercel bygger samme Godot-version med Compatibility til WebGL 2.
+Spillet er live på https://keybound-kappa.vercel.app uden Vercel-login.
+Git-push til main udløste og fuldførte automatisk production-deployment.
 
 PLAY → ONLINE CO-OP → HOST A ROOM / JOIN ROOM → seks tegns rumkode → værten
 vælger START TOGETHER. Ét tastatur pr. pc. Værten vælger replay. Forlad rummet
@@ -100,6 +102,8 @@ Live backend-check består for oprettelse, rettigheder, fuldt rum, svar, afgang
 og lås. To separate browser-sessioner har etableret rigtig WebRTC, startet samme
 kamp, og gæstens simulerede keyboard-bevægelse blev observeret hos værten.
 Det er ikke en fysisk to-pc- eller controller-test.
+Det samme online-flow er også verificeret på den live Vercel-side, inklusive
+fælles pause/genoptagelse og identisk timer. Ingen browser-runtimefejl observeret.
 
 Begrænsning: gratis STUN uden TURN-relay; visse VPN/netværk/NAT kan blokere
 forbindelsen. Værten holder fanen åben og fokuseret. Ingen host-migration.

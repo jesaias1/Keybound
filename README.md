@@ -1,5 +1,7 @@
 # KEYBOUND
 
+[Play in the browser](https://keybound-kappa.vercel.app)
+
 A cooperative party-game slice for 2–4 players, with local Windows play and
 browser online rooms. Tiny programs physically
 type on a giant top-down QWERTY keyboard. Stand on a key for five seconds to
