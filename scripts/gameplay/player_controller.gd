@@ -1,124 +1,180 @@
 class_name PlayerController
-extends CharacterBody2D
-## Top-down movement plus a separate vertical jump axis. Support comes from
-## KeyboardWorld, never from the rendered sprite's elevated position.
+extends Node2D
+## One critter. Kinematics are hand-rolled against the key tiles: no physics
+## bodies, no impulses. MatchController calls `tick` exactly once per physics
+## step for every player; the visual child interpolates between steps so
+## motion is smooth at any refresh rate.
+##
+## A player always belongs to at most one key (`current_key`). Walking changes
+## it when the centre is properly inside another tile; jumping keeps the
+## origin key until the critter has actually flown clear of it, and nothing
+## passed over in the air is ever touched.
 
-signal fell(player: PlayerController)
-signal pause_requested(player: PlayerController)
-signal cue_requested(cue: String, player: PlayerController)
-signal input_sampled(player: PlayerController, frame: InputFrame)
+signal pressed(player: PlayerController, key: int, via_jump: bool)
+signal died(player: PlayerController, cause: String)
+signal jumped(player: PlayerController)
+signal landed(player: PlayerController, key: int)
+signal blocked(player: PlayerController, key: int)
+
+const STAND_OFFSET := GameConfig.KEY_DEPTH - GameConfig.KEY_PRESS_DEPTH
+const LANDING_PROBES: Array[Vector2] = [
+	Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
+	Vector2(0.7, 0.7), Vector2(-0.7, 0.7), Vector2(0.7, -0.7), Vector2(-0.7, -0.7),
+]
 
 var player_id := 0
+var team := 0
+var team_slot := 0
 var device_id := InputSource.KEYBOARD
 var source: InputSource
-var keyboard: KeyboardWorld
+var board: KeyLockBoard
 var connected := true
-var input_enabled := false
-var current_key_id := ""
-var spawn_protected := false
-var falling := false
+var alive := true
+var active := false            ## On the keyboard and simulating.
 var grounded := true
+var velocity := Vector2.ZERO
 var height := 0.0
 var vertical_velocity := 0.0
-var heat := 0.0
-var show_player_label := true
+var current_key := -1
+var trapped := false
+var stand_time := 0.0          ## Seconds spent on the current normal key.
+var stand_limit := GameConfig.KEY_STAND_LIMIT   ## 0 disables the overstay rule.
+var hold_safe := false         ## On Enter with the whole team: the victory hold replaces the stand limit.
+var push_cooldown := 0.0
+var jump_boost := 1.0           ## Perk: multiplies jump velocity.
+var push_immune := false       ## Perk: cannot be shoved.
+var spare_escapes_max := 0     ## Perk: Escapes per round that skip the recharge.
+var spare_escapes := 0
+var dashing := false           ## Sliding along a row from Tab.
+var speed_time := 0.0          ## Power-up: seconds of extra speed left.
+var shield_time := 0.0         ## Power-up: seconds of push immunity left.
+var calm_time := 0.0           ## Power-up: seconds the stand timer stays frozen.
+var mood_override := -1        ## CritterPose.Mood forced by the match (victory, defeat).
+var straining := false
 var reduced_motion := false
 var remote_controlled := false
 var remote_frame := InputFrame.new()
 var remote_input_age := 0.0
 var replica := false
-var stats := {"correct": 0, "wrong": 0, "falls": 0, "backspaces": 0, "enters": 0, "caps": 0, "bumps": 0, "distance": 0.0, "shift_time": 0.0}
-var _fall_elapsed := 0.0
-var _protection_remaining := 0.0
-var _coyote := 0.0
+var predicted := false         ## Online guest, own critter: moves from local input at once.
+var predict_live := false      ## Set by the match each step that prediction is driving.
+var debug_frame: InputFrame    ## Tests: stands in for the device while predicting.
+var pose := CritterPose.new()
+var stats := {
+	"typed": 0, "burns": 0, "jumps": 0, "deaths": 0, "revives": 0, "escapes": 0,
+	"locks": 0, "distance": 0.0, "shift_time": 0.0, "pushes": 0,
+}
+
+var _rig: CritterRig
+var _prev_position := Vector2.ZERO
+var _prev_height := 0.0
 var _jump_buffer := 0.0
 var _run_time := 0.0
 var _look := Vector2.DOWN
 var _squash := 1.0
-var _animation_time := 0.0
-var _bump_cooldown := 0.0
-var _font: Font = preload("res://assets/fonts/Fredoka.ttf")
+var _squash_velocity := 0.0
+var _lean := 0.0
+var _input_lock := 0.0
+var _blocked_cooldown := 0.0
+var _spawn_time := -1.0
+var _death_time := -1.0
+var _warp_time := -1.0
+var _warp_from := Vector2.ZERO
+var _replica_target := Vector2.ZERO
+var _replica_height := 0.0
+var _host_velocity := Vector2.ZERO
+var _neutral := InputFrame.new()
+var _knock_duration := 0.0
+var _knock_elapsed := 0.0
+var _knock_velocity := Vector2.ZERO
+var _knock_height := GameConfig.PUSH_ARC_HEIGHT
 
-func setup(id: int, device: int, world: KeyboardWorld = null) -> void:
+static var _enter_key := -2
+
+func setup(id: int, device: int, lock_board: KeyLockBoard = null, team_id := 0, slot := 0, war := false) -> void:
 	player_id = id
 	device_id = device
+	team = team_id
+	team_slot = slot
+	board = lock_board
 	source = InputSource.create(device)
-	keyboard = world
 	name = "Player_%d" % (id + 1)
-	collision_layer = 0
-	collision_mask = 0
-	z_index = 5
+	pose.setup(id, team_id, slot, war)
 
-func _physics_process(delta: float) -> void:
-	_animation_time += delta
-	if replica:
-		queue_redraw()
-		return
-	_bump_cooldown = maxf(_bump_cooldown - delta, 0.0)
-	_squash = move_toward(_squash, 1.0, delta * 3.0)
-	var frame := InputFrame.new()
+func _ready() -> void:
+	_rig = CritterRig.new()
+	add_child(_rig)
+	_rig.build(pose)
+	_rig.scale = Vector2.ONE * GameConfig.CRITTER_SCALE
+	_rig.visible = false
+
+## Reads this player's device. Remote players replay their last network frame.
+func poll_input(delta: float) -> InputFrame:
 	if remote_controlled:
 		remote_input_age += delta
 		if remote_input_age > GameConfig.NETWORK_INPUT_TIMEOUT:
 			remote_frame = InputFrame.new()
-		frame = InputFrame.from_dict(remote_frame.to_dict())
+		var frame := InputFrame.from_dict(remote_frame.to_dict())
 		remote_frame.jump_pressed = false
 		remote_frame.pause_pressed = false
-	elif source != null and connected:
-		frame = source.poll()
-		if frame.pause_pressed:
-			pause_requested.emit(self)
-	input_sampled.emit(self, frame)
-	if not input_enabled:
-		frame = InputFrame.new()
-	if falling:
-		_fall_elapsed += delta
-		if _fall_elapsed >= GameConfig.FALL_DURATION:
-			falling = false
-			fell.emit(self)
-		queue_redraw()
-		return
-	_protection_remaining = maxf(_protection_remaining - delta, 0.0)
-	spawn_protected = _protection_remaining > 0.0
-	if not input_enabled:
-		velocity = Vector2.ZERO
-		queue_redraw()
-		return
-	var supported := keyboard != null and keyboard.find_key_at(position) != null
-	if supported and grounded:
-		_coyote = GameConfig.COYOTE_TIME
-	else:
-		_coyote = maxf(_coyote - delta, 0.0)
+		return frame
+	if source != null and connected:
+		return source.poll()
+	return _neutral
+
+## Online guest, own critter only. It runs the same acceleration, wall and jump
+## rules as the host from local input, so it responds this very tick. It never
+## presses, jams, kills or pushes: those stay the host's call. The host's
+## position (sent a moment late) only pulls this one back when the two have
+## truly drifted apart, and snaps it for warps and spawns.
+func predict_tick(frame: InputFrame, delta: float) -> void:
+	_prev_position = position
+	_prev_height = height
 	_jump_buffer = GameConfig.JUMP_BUFFER if frame.jump_pressed else maxf(_jump_buffer - delta, 0.0)
-	if frame.move.length() > 0.1:
+	var wish := frame.move
+	if wish.length_squared() > 0.01:
 		_run_time += delta
-		_look = frame.move.normalized()
+		_look = wish.normalized()
 	else:
 		_run_time = 0.0
-	var speed := lerpf(GameConfig.MOVE_SPEED, GameConfig.RUN_SPEED, minf(_run_time / GameConfig.RUN_RAMP_TIME, 1.0))
-	var accel := GameConfig.GROUND_ACCEL if grounded else GameConfig.AIR_ACCEL
-	if frame.move == Vector2.ZERO:
-		accel = GameConfig.GROUND_DECEL if grounded else GameConfig.AIR_DECEL
-	elif velocity.dot(frame.move) < 0.0 and grounded:
-		accel = GameConfig.TURN_ACCEL
-	velocity = velocity.move_toward(frame.move * speed, accel * delta)
-	if _jump_buffer > 0.0 and _coyote > 0.0:
-		_jump_buffer = 0.0
-		_coyote = 0.0
-		grounded = false
-		vertical_velocity = GameConfig.JUMP_VELOCITY
-		var support := keyboard.find_key_at(position)
-		if support != null and support.key_type == "space":
-			vertical_velocity = GameConfig.SPACE_SUPER_BOUNCE
-			cue_requested.emit("boing", self)
+	var top := lerpf(GameConfig.MOVE_SPEED, GameConfig.RUN_SPEED, minf(_run_time / GameConfig.RUN_RAMP_TIME, 1.0))
+	var accel: float
+	if grounded:
+		if wish == Vector2.ZERO:
+			accel = GameConfig.GROUND_DECEL
+		elif velocity.dot(wish) < 0.0:
+			accel = GameConfig.TURN_ACCEL
 		else:
-			cue_requested.emit("v_hup", self)
-		_squash = 0.82
-	var old_position := position
-	move_and_slide()
-	stats.distance = float(stats.distance) + old_position.distance_to(position)
-	supported = keyboard != null and keyboard.find_key_at(position) != null
-	if not grounded:
+			accel = GameConfig.GROUND_ACCEL
+	else:
+		accel = GameConfig.AIR_DECEL if wish == Vector2.ZERO else GameConfig.AIR_ACCEL
+	velocity = velocity.move_toward(wish * top, accel * delta)
+	if grounded and _jump_buffer > 0.0:
+		_jump_buffer = 0.0
+		grounded = false
+		height = 0.01
+		vertical_velocity = GameConfig.JUMP_VELOCITY * jump_boost
+		_squash = 0.72
+	var half := KeyboardLayout.field_size() * 0.5 - Vector2(3.0, 3.0)
+	if grounded:
+		var here := KeyboardLayout.tile_at_world(position)
+		var step := velocity * delta
+		var point := position
+		if step.x != 0.0:
+			var along_x := Vector2(point.x + step.x, point.y)
+			if _predicted_walkable(along_x, here):
+				point = along_x
+			else:
+				velocity.x = 0.0
+		if step.y != 0.0:
+			var along_y := Vector2(point.x, point.y + step.y)
+			if _predicted_walkable(along_y, here):
+				point = along_y
+			else:
+				velocity.y = 0.0
+		position = point
+	else:
+		position = (position + velocity * delta).clamp(-half, half)
 		var gravity := GameConfig.GRAVITY
 		if vertical_velocity > 0.0 and not frame.jump_held:
 			gravity *= GameConfig.JUMP_CUT_GRAVITY_MULT
@@ -127,150 +183,505 @@ func _physics_process(delta: float) -> void:
 		vertical_velocity -= gravity * delta
 		height += vertical_velocity * delta
 		if height <= 0.0:
-			if supported:
-				var impact := -vertical_velocity
-				var landing_key := keyboard.find_key_at(position)
-				if landing_key.key_type == "space" and impact >= GameConfig.SPACE_BOUNCE_MIN_IMPACT:
-					vertical_velocity = impact * GameConfig.SPACE_BOUNCE_RESTITUTION
-					height = 0.01
-					cue_requested.emit("boing", self)
-				else:
-					height = 0.0
-					vertical_velocity = 0.0
-					grounded = true
-					_squash = 1.25
-					cue_requested.emit("land", self)
-			elif _coyote <= 0.0:
-				begin_fall()
-	elif not supported:
-		grounded = false
-		if _coyote <= 0.0:
-			begin_fall()
-	queue_redraw()
+			height = 0.0
+			vertical_velocity = 0.0
+			grounded = true
+			_squash = 1.38
+	var error := _replica_target - position
+	var drift := error.length()
+	if drift > 320.0:
+		position = _replica_target
+	elif drift > 2.0 and velocity.length() < 5.0 and _host_velocity.length() < 5.0:
+		# Both sides have come to rest: settle on exactly the host's spot.
+		position += error * (1.0 - exp(-10.0 * delta))
+	elif drift > 90.0 + velocity.length() * 0.3:
+		position += error * (1.0 - exp(-12.0 * delta))
 
-func begin_fall() -> void:
-	if falling or spawn_protected:
+func _predicted_walkable(point: Vector2, here: int) -> bool:
+	var tile := KeyboardLayout.tile_at_world(point)
+	return tile >= 0 and (tile == here or board.can_walk(tile))
+
+## One fixed simulation step. `simulate` is false outside live play; the call
+## still happens so interpolation has a stable previous state.
+func tick(frame: InputFrame, delta: float, simulate: bool) -> void:
+	_prev_position = position
+	_prev_height = height
+	if replica:
+		var weight := 1.0 - exp(-GameConfig.REPLICA_SMOOTHING * delta)
+		position = position.lerp(_replica_target, weight)
+		height = lerpf(height, _replica_height, weight)
 		return
-	falling = true
-	grounded = false
-	_fall_elapsed = 0.0
-	stats.falls = int(stats.falls) + 1
-	current_key_id = ""
-	cue_requested.emit("fall", self)
+	if not simulate or not alive or not active:
+		velocity = Vector2.ZERO
+		return
+	_blocked_cooldown = maxf(_blocked_cooldown - delta, 0.0)
+	push_cooldown = maxf(push_cooldown - delta, 0.0)
+	speed_time = maxf(speed_time - delta, 0.0)
+	shield_time = maxf(shield_time - delta, 0.0)
+	calm_time = maxf(calm_time - delta, 0.0)
+	if _knock_duration > 0.0:
+		_tick_knockback(delta)
+		_tick_stand_limit(delta)
+		return
+	if _input_lock > 0.0:
+		_input_lock -= delta
+		frame = _neutral
+	_jump_buffer = GameConfig.JUMP_BUFFER if frame.jump_pressed else maxf(_jump_buffer - delta, 0.0)
+	var wish := frame.move
+	if wish.length_squared() > 0.01:
+		_run_time += delta
+		_look = wish.normalized()
+	else:
+		_run_time = 0.0
+	var top := lerpf(GameConfig.MOVE_SPEED, GameConfig.RUN_SPEED, minf(_run_time / GameConfig.RUN_RAMP_TIME, 1.0))
+	if speed_time > 0.0:
+		top *= GameConfig.POWER_SPEED_BOOST
+	var accel: float
+	if grounded:
+		if wish == Vector2.ZERO:
+			accel = GameConfig.GROUND_DECEL
+		elif velocity.dot(wish) < 0.0:
+			accel = GameConfig.TURN_ACCEL
+		else:
+			accel = GameConfig.GROUND_ACCEL
+	else:
+		accel = GameConfig.AIR_DECEL if wish == Vector2.ZERO else GameConfig.AIR_ACCEL
+	velocity = velocity.move_toward(wish * top, accel * delta)
+	if grounded and _jump_buffer > 0.0:
+		_begin_jump()
+	var before := position
+	if grounded:
+		_move_grounded(delta)
+	else:
+		_move_air(frame, delta)
+	stats.distance = float(stats.distance) + before.distance_to(position)
+	_tick_stand_limit(delta)
 
-func respawn_at(point: Vector2) -> void:
-	position = point
-	velocity = Vector2.ZERO
-	height = 0.0
-	vertical_velocity = 0.0
-	falling = false
-	grounded = true
-	_protection_remaining = GameConfig.SPAWN_PROTECTION
-	spawn_protected = true
-	_coyote = 0.0
-	_jump_buffer = 0.0
-	_squash = 1.25
+## Keep moving: a key only holds a critter for so long. Hopping in place does
+## not reset it; only reaching a different key does. The clock waits while
+## every neighbouring key is jammed, so being boxed in is never an unavoidable
+## death. Enter obeys it too, except while the whole team is on it together.
+func _tick_stand_limit(delta: float) -> void:
+	if _enter_key == -2:
+		_enter_key = KeyboardLayout.index_of("enter")
+	var limited := current_key >= 0 and stand_limit > 0.0 and (
+		board.is_lockable(current_key) or (current_key == _enter_key and not hold_safe))
+	if alive and limited and calm_time > 0.0:
+		stand_time = 0.0
+	elif alive and limited:
+		if not trapped:
+			stand_time += delta
+		if stand_time >= stand_limit:
+			kill("overstay")
+	else:
+		stand_time = 0.0
 
-func can_occupy() -> bool:
-	return connected and not falling and grounded and not spawn_protected
+func is_push_immune() -> bool:
+	return push_immune or shield_time > 0.0
 
-func bump(direction: Vector2) -> bool:
-	if _bump_cooldown > 0.0 or falling or not grounded:
+func is_knocked() -> bool:
+	return _knock_duration > 0.0
+
+## Shoved by another critter: a short forced hop of `distance` pixels. It can
+## never kill; the landing always resolves to a key that can be stood on.
+## A Tab dash is the same forced flight, lower and much longer.
+func knockback(direction: Vector2, distance: float, duration: float, arc := GameConfig.PUSH_ARC_HEIGHT, dash := false) -> bool:
+	if not alive or not active or _knock_duration > 0.0 or direction == Vector2.ZERO:
 		return false
-	velocity += direction * GameConfig.BUMP_SPEED
-	_bump_cooldown = GameConfig.BUMP_COOLDOWN
-	stats.bumps = int(stats.bumps) + 1
+	_knock_height = arc
+	dashing = dash
+	_knock_duration = duration
+	_knock_elapsed = 0.0
+	_knock_velocity = direction.normalized() * distance / duration
+	velocity = _knock_velocity
+	grounded = false
+	vertical_velocity = 0.0
+	_jump_buffer = 0.0
+	_run_time = 0.0
+	_squash = 0.75
 	return true
 
-func _draw() -> void:
-	var member := Cast.member(player_id)
-	var shrink := maxf(1.0 - _fall_elapsed / GameConfig.FALL_DURATION, 0.1) if falling else 1.0
-	var shadow_scale := clampf(1.0 - height / 350.0, 0.3, 1.0)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.4, 0.52) * shadow_scale)
-	draw_circle(Vector2.ZERO, 19, Color(0.16, 0.12, 0.22, 0.27))
-	var bob := 0.0 if reduced_motion else sin(_animation_time * 16.0) * minf(velocity.length() / 220.0, 1.0) * 2.0
-	var offset := Vector2(0, -height - GameConfig.KEY_SURFACE + bob)
-	if falling:
-		offset.y += _fall_elapsed * 70.0
-	var squash := 1.0 if reduced_motion else _squash
-	var stretch := Vector2(squash, 1.0 / squash) * shrink * (member.head_scale as Vector2)
-	draw_set_transform(offset, 0, stretch)
-	var body: Color = member.color
-	var shade: Color = member.shade
-	var accent: Color = member.accent
-	draw_circle(Vector2(-11, 3), 6, shade)
-	draw_circle(Vector2(11, 3), 6, shade)
-	draw_circle(Vector2(-17, -12), 6, body)
-	draw_circle(Vector2(17, -12), 6, body)
-	if member.accessory == Cast.Accessory.EARS:
-		_oval(Vector2(-10, -44), Vector2(7, 20), body)
-		_oval(Vector2(10, -44), Vector2(7, 20), body)
-		_oval(Vector2(-10, -45), Vector2(3, 12), accent)
-		_oval(Vector2(10, -45), Vector2(3, 12), accent)
-	_oval(Vector2(0, -17), Vector2(22, 25), shade)
-	_oval(Vector2(0, -20), Vector2(22, 24), body)
-	draw_circle(Vector2(-9, -23), 8, Color("#fff7e7"))
-	draw_circle(Vector2(9, -23), 8, Color("#fff7e7"))
-	for x in [-9, 9]:
-		draw_circle(Vector2(x, -23) + _look * 2.6, 3.5, Color("#2d263d"))
-		draw_circle(Vector2(x - 1, -25) + _look * 2.6, 1.2, Color.WHITE)
-	draw_arc(Vector2(0, -13), 4.0, 0.15, PI - 0.15, 10, Color("#36293b"), 2.0, true)
-	if heat >= GameConfig.PANIC_THRESHOLD:
-		draw_circle(Vector2(0, -11), 3, Color("#36293b"))
-		draw_string(_font, Vector2(23, -43), "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#713b47"))
-	match member.accessory:
-		Cast.Accessory.CAP:
-			draw_arc(Vector2(0, -35), 19, PI, TAU, 18, accent, 10, true)
-			draw_line(Vector2(-18, -36), Vector2(26, -36), accent, 6, true)
-		Cast.Accessory.GLASSES:
-			for x in [-9, 9]:
-				draw_arc(Vector2(x, -23), 9, 0, TAU, 24, accent, 2.5, true)
-			draw_line(Vector2(-1, -24), Vector2(1, -24), accent, 3)
-		Cast.Accessory.SCARF:
-			draw_line(Vector2(-16, -4), Vector2(16, -4), accent, 9, true)
-			draw_line(Vector2(9, -4), Vector2(24, 6), accent, 8, true)
-	draw_circle(Vector2(0, -1), 6, Color("#fff7e7"))
-	_draw_symbol(int(member.symbol), Vector2(0, -1), shade)
-	draw_set_transform(Vector2.ZERO)
-	if spawn_protected:
-		draw_arc(Vector2(0, -18), 32, 0, TAU, 36, Color("#fff1b6"), 2.0, true)
-	if show_player_label:
-		var label := "P%d" % (player_id + 1)
-		var label_width := _font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
-		draw_string(_font, Vector2(-label_width * 0.5, -height - 73), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#34263f"))
-
-func _oval(center: Vector2, radii: Vector2, color: Color) -> void:
-	var points := PackedVector2Array()
-	for i in range(32):
-		points.push_back(center + Vector2(cos(i * TAU / 32), sin(i * TAU / 32)) * radii)
-	draw_colored_polygon(points, color)
-
-func network_snapshot() -> Dictionary:
-	return {"id": player_id, "pos": [position.x, position.y],
-		"vel": [velocity.x, velocity.y], "height": height, "grounded": grounded,
-		"falling": falling, "fall_elapsed": _fall_elapsed, "protected": spawn_protected,
-		"heat": heat, "connected": connected, "look": [_look.x, _look.y]}
-
-func apply_network_snapshot(data: Dictionary) -> void:
-	if not replica:
+func _tick_knockback(delta: float) -> void:
+	_knock_elapsed += delta
+	var half := KeyboardLayout.field_size() * 0.5 - Vector2(3.0, 3.0)
+	position = (position + _knock_velocity * delta).clamp(-half, half)
+	var u := minf(_knock_elapsed / _knock_duration, 1.0)
+	height = _knock_height * 4.0 * u * (1.0 - u)
+	if current_key >= 0 and not _over_own_key(position):
+		board.remove(player_id)
+		current_key = -1
+	if u < 1.0:
 		return
-	position = Vector2(float(data.pos[0]), float(data.pos[1]))
-	velocity = Vector2(float(data.vel[0]), float(data.vel[1]))
-	height = float(data.height)
-	grounded = bool(data.grounded)
-	falling = bool(data.falling)
-	_fall_elapsed = float(data.fall_elapsed)
-	spawn_protected = bool(data.protected)
-	heat = float(data.heat)
-	connected = bool(data.connected)
-	_look = Vector2(float(data.look[0]), float(data.look[1]))
-	queue_redraw()
+	_knock_duration = 0.0
+	dashing = false
+	height = 0.0
+	velocity = Vector2.ZERO
+	if current_key >= 0:
+		_touch_down(current_key)   # Shoved against the edge: never left the key.
+		return
+	var target := _safe_landing()
+	if target >= 0 and board.place(player_id, target):
+		current_key = target
+		stand_time = 0.0
+		stats.locks = int(stats.locks) + 1
+		_touch_down(target)
+	else:
+		kill("jam")
 
-func _draw_symbol(kind: int, center: Vector2, color: Color) -> void:
-	match kind:
-		Cast.Symbol.TRIANGLE:
-			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -4), center + Vector2(4, 3), center + Vector2(-4, 3)]), color)
-		Cast.Symbol.CIRCLE: draw_circle(center, 3, color)
-		Cast.Symbol.SQUARE: draw_rect(Rect2(center - Vector2.ONE * 3, Vector2.ONE * 6), color)
-		Cast.Symbol.DIAMOND:
-			draw_colored_polygon(PackedVector2Array([center + Vector2(0, -4), center + Vector2(4, 0), center + Vector2(0, 4), center + Vector2(-4, 0)]), color)
+## Where a shoved critter comes down: the tile under it, or failing that the
+## nearest key that can be stood on.
+func _safe_landing() -> int:
+	var tile := KeyboardLayout.tile_at_world(position)
+	if board.can_land(tile):
+		return tile
+	var best := -1
+	var best_distance := INF
+	var best_point := position
+	for key in range(board.key_count()):
+		if not board.can_land(key):
+			continue
+		var rect := KeyboardLayout.world_tile_rect(key).grow(-10.0)
+		var point := Vector2(clampf(position.x, rect.position.x, rect.end.x), clampf(position.y, rect.position.y, rect.end.y))
+		var distance := point.distance_squared_to(position)
+		if distance < best_distance:
+			best_distance = distance
+			best = key
+			best_point = point
+	if best >= 0:
+		position = best_point
+	return best
+
+func _begin_jump() -> void:
+	_jump_buffer = 0.0
+	grounded = false
+	height = 0.01
+	vertical_velocity = GameConfig.JUMP_VELOCITY * jump_boost
+	_squash = 0.72
+	stats.jumps = int(stats.jumps) + 1
+	jumped.emit(self)
+
+func _move_grounded(delta: float) -> void:
+	var step := velocity * delta
+	var point := position
+	var along_x := Vector2(point.x + step.x, point.y)
+	if step.x != 0.0:
+		if _walkable(along_x):
+			point = along_x
+		else:
+			_bonk(along_x)
+			velocity.x = 0.0
+	var along_y := Vector2(point.x, point.y + step.y)
+	if step.y != 0.0:
+		if _walkable(along_y):
+			point = along_y
+		else:
+			_bonk(along_y)
+			velocity.y = 0.0
+	position = point
+	var tile := KeyboardLayout.tile_at_world(position)
+	if tile >= 0 and tile != current_key and _deep_inside(tile, position):
+		if board.place(player_id, tile):
+			current_key = tile
+			stand_time = 0.0
+			stats.locks = int(stats.locks) + 1
+			pressed.emit(self, tile, false)
+
+func _move_air(frame: InputFrame, delta: float) -> void:
+	position += velocity * delta
+	var gravity := GameConfig.GRAVITY
+	if vertical_velocity > 0.0 and not frame.jump_held:
+		gravity *= GameConfig.JUMP_CUT_GRAVITY_MULT
+	elif vertical_velocity < 0.0:
+		gravity *= GameConfig.FALL_GRAVITY_MULT
+	vertical_velocity -= gravity * delta
+	height += vertical_velocity * delta
+	# The origin key is only released once the critter has truly left it, so
+	# a hop in place keeps the key (and counts as a fresh press on landing).
+	if current_key >= 0 and not _over_own_key(position):
+		board.remove(player_id)
+		current_key = -1
+	if height > 0.0:
+		return
+	height = 0.0
+	vertical_velocity = 0.0
+	if current_key >= 0:
+		_touch_down(current_key)
+		return
+	var target := _resolve_landing()
+	if target >= 0 and board.place(player_id, target):
+		current_key = target
+		stand_time = 0.0
+		stats.locks = int(stats.locks) + 1
+		_touch_down(target)
+	else:
+		kill("edge" if KeyboardLayout.tile_at_world(position) < 0 else "jam")
+
+func _touch_down(key: int) -> void:
+	grounded = true
+	_squash = 1.38
+	landed.emit(self, key)
+	pressed.emit(self, key, true)
+
+## Picks the tile a landing counts for, nudging a near miss onto solid ground.
+func _resolve_landing() -> int:
+	var tile := KeyboardLayout.tile_at_world(position)
+	if board.can_land(tile):
+		return tile
+	for probe in LANDING_PROBES:
+		var point := position + probe * GameConfig.LAND_FORGIVENESS
+		var near := KeyboardLayout.tile_at_world(point)
+		if board.can_land(near):
+			var rect := KeyboardLayout.world_tile_rect(near).grow(-1.0)
+			position = Vector2(clampf(position.x, rect.position.x, rect.end.x), clampf(position.y, rect.position.y, rect.end.y))
+			return near
+	return -1
+
+## Walkers are stopped by the keyboard's edge and by jammed keys. Only a jump
+## can put a critter on a jammed key, and that is what is fatal.
+func _walkable(point: Vector2) -> bool:
+	var tile := KeyboardLayout.tile_at_world(point)
+	if tile < 0:
+		return false
+	return tile == current_key or board.can_walk(tile)
+
+func _bonk(point: Vector2) -> void:
+	if _blocked_cooldown > 0.0:
+		return
+	var tile := KeyboardLayout.tile_at_world(point)
+	if tile >= 0:
+		_blocked_cooldown = 0.35
+		blocked.emit(self, tile)
+
+func _deep_inside(tile: int, point: Vector2) -> bool:
+	return KeyboardLayout.world_tile_rect(tile).grow(-GameConfig.TILE_HYSTERESIS).has_point(point)
+
+func _over_own_key(point: Vector2) -> bool:
+	return KeyboardLayout.world_tile_rect(current_key).grow(GameConfig.TILE_HYSTERESIS).has_point(point)
+
+# --- Placement ------------------------------------------------------------------
+
+## Drops the critter onto a key (round start, revive). False if it is jammed.
+func spawn_on(key: int, point: Vector2) -> bool:
+	if not board.place(player_id, key):
+		return false
+	_reset_motion(point)
+	current_key = key
+	stand_time = 0.0
+	alive = true
+	active = true
+	_spawn_time = 0.0
+	_death_time = -1.0
+	return true
+
+## Escape: instant in the simulation, dissolve-and-pop for the eyes.
+func warp_to(key: int, point: Vector2) -> bool:
+	if not board.place(player_id, key):
+		return false
+	_warp_from = position
+	_reset_motion(point)
+	current_key = key
+	stand_time = 0.0
+	_warp_time = 0.0
+	_input_lock = GameConfig.WARP_OUT_TIME + 0.05
+	stats.escapes = int(stats.escapes) + 1
+	return true
+
+func kill(cause: String) -> void:
+	if not alive:
+		return
+	alive = false
+	active = false
+	grounded = true
+	height = 0.0
+	velocity = Vector2.ZERO
+	board.remove(player_id)
+	current_key = -1
+	stand_time = 0.0
+	_knock_duration = 0.0
+	dashing = false
+	_death_time = 0.0
+	stats.deaths = int(stats.deaths) + 1
+	died.emit(self, cause)
+
+## Removes the critter from the board without killing it (round reset).
+func bench() -> void:
+	board.remove(player_id)
+	current_key = -1
+	active = false
+	alive = true
+	trapped = false
+	stand_time = 0.0
+	spare_escapes = spare_escapes_max
+	dashing = false
+	speed_time = 0.0
+	shield_time = 0.0
+	calm_time = 0.0
+	straining = false
+	mood_override = -1
+	_death_time = -1.0
+	_spawn_time = -1.0
+	_warp_time = -1.0
+	_reset_motion(position)
+
+## Soft separation: only ever shifts a critter that is well inside its own
+## tile, and never out of it, so a crowd cannot push anyone across a seam or
+## hold back someone who is already stepping onto the next key.
+func nudge(offset: Vector2) -> void:
+	if not grounded or current_key < 0:
+		return
+	var rect := KeyboardLayout.world_tile_rect(current_key).grow(-GameConfig.TILE_HYSTERESIS)
+	var point := position + offset
+	if rect.has_point(position) and rect.has_point(point):
+		position = point
+
+## 0..1 of the way to being dropped for standing still.
+func stand_fraction() -> float:
+	return clampf(stand_time / stand_limit, 0.0, 1.0) if stand_limit > 0.0 else 0.0
+
+func is_on(key: int) -> bool:
+	return alive and active and grounded and current_key == key
+
+func _reset_motion(point: Vector2) -> void:
+	position = point
+	_prev_position = point
+	velocity = Vector2.ZERO
+	height = 0.0
+	_prev_height = 0.0
+	vertical_velocity = 0.0
+	grounded = true
+	_jump_buffer = 0.0
+	_run_time = 0.0
+	_knock_duration = 0.0
+
+# --- Presentation -----------------------------------------------------------------
+
+func _process(delta: float) -> void:
+	if _rig == null:
+		return
+	if not alive and _death_time >= GameConfig.DEATH_DURATION or alive and not active:
+		_rig.visible = false
+		return
+	var spring := (1.0 - _squash) * 420.0 - _squash_velocity * 20.0
+	_squash_velocity += spring * delta
+	_squash += _squash_velocity * delta
+	_lean = lerpf(_lean, clampf(velocity.x / GameConfig.RUN_SPEED, -1.0, 1.0) * 0.2, 1.0 - exp(-14.0 * delta))
+	var fraction := Engine.get_physics_interpolation_fraction()
+	var shown := _prev_position.lerp(position, fraction) - position + Vector2(0.0, -STAND_OFFSET)
+	pose.height = lerpf(_prev_height, height, fraction)
+	pose.time += delta
+	pose.move = clampf(velocity.length() / GameConfig.MOVE_SPEED, 0.0, 1.0) if grounded else 0.0
+	pose.look = _look
+	pose.lean = 0.0 if reduced_motion else _lean
+	pose.squash = 1.0 if reduced_motion else clampf(_squash, 0.6, 1.5)
+	pose.scale = 1.0
+	pose.spin = 0.0
+	pose.alpha = 1.0
+	pose.mood = _mood()
+	if not alive:
+		# Zapped: pop up, spin, shrink away.
+		_death_time += delta
+		var t := clampf(_death_time / GameConfig.DEATH_DURATION, 0.0, 1.0)
+		pose.height = sin(t * PI) * 46.0
+		pose.spin = t * 9.0
+		pose.scale = maxf(1.0 - t * t, 0.02)
+		pose.alpha = 1.0 - t * 0.6
+	elif _warp_time >= 0.0:
+		_warp_time += delta
+		if _warp_time < GameConfig.WARP_OUT_TIME:
+			# Still visible at the Escape key, squeezing into a sliver.
+			var out := _warp_time / GameConfig.WARP_OUT_TIME
+			pose.scale = 1.0 - out * 0.7
+			pose.squash = 1.0 - out * 0.75
+			pose.alpha = 1.0 - out
+			pose.height = out * 22.0
+			shown += _warp_from - position
+		elif _warp_time < GameConfig.WARP_OUT_TIME + GameConfig.WARP_IN_TIME:
+			var back := (_warp_time - GameConfig.WARP_OUT_TIME) / GameConfig.WARP_IN_TIME
+			pose.scale = 0.3 + back * 0.7 + sin(back * PI) * 0.28
+			pose.squash = 1.0 + (1.0 - back) * 0.4
+		else:
+			_warp_time = -1.0
+	elif _spawn_time >= 0.0:
+		_spawn_time += delta
+		if _spawn_time < 0.28:
+			var drop := _spawn_time / 0.28
+			pose.height = (1.0 - drop * drop) * 240.0
+			pose.squash = 0.8
+			pose.mood = CritterPose.Mood.AIR
+		elif _spawn_time < 0.5:
+			var settle := (_spawn_time - 0.28) / 0.22
+			pose.squash = 1.0 + sin(settle * PI) * 0.36 * (1.0 - settle)
+		else:
+			_spawn_time = -1.0
+	_rig.visible = true
+	_rig.position = shown
+	_rig.apply(pose)
+
+func _mood() -> CritterPose.Mood:
+	if not alive:
+		return CritterPose.Mood.DEAD
+	if mood_override >= 0:
+		return mood_override as CritterPose.Mood
+	if not grounded:
+		return CritterPose.Mood.AIR
+	if straining:
+		return CritterPose.Mood.STRAIN
+	if trapped or stand_fraction() > 0.6:
+		return CritterPose.Mood.PANIC
+	return CritterPose.Mood.NORMAL
+
+# --- Replication --------------------------------------------------------------------
+
+func network_snapshot() -> Array:
+	return [
+		player_id, snappedf(position.x, 0.1), snappedf(position.y, 0.1), snappedf(height, 0.1),
+		alive, active, grounded, current_key, snappedf(_look.x, 0.01), snappedf(_look.y, 0.01),
+		snappedf(velocity.x, 1.0), snappedf(velocity.y, 1.0), trapped, straining, mood_override, connected,
+		snappedf(stand_fraction(), 0.01),
+	]
+
+func apply_network_snapshot(data: Array) -> void:
+	if not replica or data.size() < 16:
+		return
+	var was_alive := alive
+	var was_active := active
+	var was_grounded := grounded
+	var local_velocity := velocity
+	var local_grounded := grounded
+	var local_look := _look
+	_replica_target = Vector2(float(data[1]), float(data[2]))
+	_replica_height = float(data[3])
+	alive = bool(data[4])
+	active = bool(data[5])
+	grounded = bool(data[6])
+	current_key = int(data[7])
+	_look = Vector2(float(data[8]), float(data[9]))
+	_host_velocity = Vector2(float(data[10]), float(data[11]))
+	velocity = _host_velocity
+	trapped = bool(data[12])
+	straining = bool(data[13])
+	mood_override = int(data[14])
+	connected = bool(data[15])
+	# While prediction is driving this critter, its own motion stays local.
+	var local_drive := predict_live and alive and active and was_alive and was_active
+	if local_drive:
+		velocity = local_velocity
+		grounded = local_grounded
+		_look = local_look
+	if data.size() > 16:
+		stand_time = float(data[16]) * stand_limit
+	if not local_drive and (active and not was_active or position.distance_to(_replica_target) > GameConfig.KEY_UNIT * 1.5):
+		# Spawns and warps snap rather than glide across the board.
+		position = _replica_target
+		_prev_position = position
+		height = _replica_height
+		if active and not was_active:
+			_spawn_time = 0.0
+	if was_alive and not alive:
+		_death_time = 0.0
+	if local_drive:
+		return
+	if grounded and not was_grounded:
+		_squash = 1.38
+	elif not grounded and was_grounded:
+		_squash = 0.72

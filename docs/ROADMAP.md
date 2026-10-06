@@ -1,34 +1,36 @@
 # Roadmap
 
-## Phase 0 - Foundation
+## Phase 0 - Foundation (done)
 
 Engine decision, project, documentation, modular architecture, local input
-framework, basic scenes, automated rule tests, Windows development export.
+framework, automated rule tests, Windows development export.
 
-## Phase 1 - Local co-op vertical slice
+## Phase 1 - Local vertical slice (rebuilt 2026-10-06)
 
-Full QWERTY keyboard; 2-4 hot-join players; responsive movement/jump; falling and
-respawn; five-second per-key shared heat with decay and no multi-player acceleration; Letterbox and history;
-correct/incorrect typing; cracking/collapse; Backspace undo/repair; repeated-key
-recovery; Shift; Caps Lock; Space; Enter; Standard Co-op; HUD; pause; phrase and
-match results; replay; generated placeholder feedback. The 2026-10-05 handoff
-model cracks keys on first correct use and collapses them on second use or error.
+Full QWERTY keyboard; start-key selection; responsive movement and jumping;
+five-second key lockouts; step-to-press typing; Shift and Caps; Escape warp;
+Unjam; whole-team Enter hold; out-for-the-round and REVIVE; co-op across five
+tiers; HUD, pause, round and match results, replay; generated audio; polished
+procedural presentation; developer diagnostics.
 
-## Phase 1B - Physical playtest gate
+## Phase 1B - Physical playtest gate (open)
 
-Requires at least two people and two separate physical controllers, preferably
-four. Use `docs/PLAYTEST_CHECKLIST.md`. Explicit human approval is required.
+Requires at least two people and two separate physical controllers,
+preferably four. Use `docs/PLAYTEST_CHECKLIST.md`. Explicit human approval is
+required. Not performed.
+
+## Owner-authorized exceptions
+
+- 2026-10-06: same-match browser online co-op with Convex Free rooms,
+  host-authoritative WebRTC, GitHub push and Git-connected Vercel deployment.
+- 2026-10-06: the gameplay overhaul above, and **team versus (Hopkey: WAR,
+  local 1v1 and 2v2)**, requested directly by the owner. This pulls the old
+  Phase 6/7 versus items forward; it does not approve Phase 1B.
+- 2026-10-06: rename from KEYBOUND to Hopkey, with supplied logo and icon.
 
 ## Later, not authorized
 
-- Phase 2: Endless Keyboard
-- Phase 3: Sentence Campaign and bosses
-- Phase 4: advanced group mechanics
-- Phase 5: online modes/infrastructure beyond the authorized browser slice
-- Phase 6: team versus team
-- Phase 7: dedicated 1v1
-
-Owner-authorized exception, 2026-10-06: same-match browser online co-op,
-GitHub push and Git-connected Vercel deployment, with Convex Free rooms and
-host-authoritative WebRTC. This does not approve Phase 1B or other modes.
-
+- Endless Keyboard
+- Sentence Campaign and bosses
+- Combat, grabbing, throwing, progression
+- Online War, matchmaking, or online infrastructure beyond the co-op slice

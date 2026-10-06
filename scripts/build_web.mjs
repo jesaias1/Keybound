@@ -60,7 +60,7 @@ writeFileSync(htmlPath, readFileSync(htmlPath, 'utf8').replaceAll('@@GAME_TITLE@
 const convexUrl = process.env.CONVEX_URL;
 if (!convexUrl || !/^https:\/\/[a-z0-9-]+\.convex\.cloud$/.test(convexUrl)) throw new Error('CONVEX_URL must name the deployed Convex backend');
 // Only the public endpoint ships to the browser. Deploy keys stay server-side.
-writeFileSync(join(output, 'network-config.js'), `window.KEYBOUND_CONVEX_URL = ${JSON.stringify(convexUrl)};\n`);
+writeFileSync(join(output, 'network-config.js'), `window.HOPKEY_CONVEX_URL = ${JSON.stringify(convexUrl)};\n`);
 copyFileSync(join(root, 'node_modules/convex/dist/browser.bundle.js'), join(output, 'convex.js'));
 copyFileSync(join(root, 'deployment/online.js'), join(output, 'online.js'));
 writeFileSync(join(output, 'build-info.json'), JSON.stringify({ engine: version, commit: process.env.VERCEL_GIT_COMMIT_SHA || null }));

@@ -199,8 +199,114 @@ static func build() -> Dictionary:
 	Synth.noise(b, 0.0, 0.2, 0.12, 0.5, 0.0, 0.05, 1.5, 99)
 	lib["whoosh"] = Synth.to_stream(b)
 
+	_build_keybound(lib)
 	_build_voices(lib)
 	return lib
+
+## Lockouts, Escape, Enter and the rest of the routing game's vocabulary.
+static func _build_keybound(lib: Dictionary) -> void:
+	# Jam: a heavy thock that bottoms out, then a latch catching.
+	var b := Synth.buffer(0.22)
+	Synth.noise(b, 0.0, 0.03, 0.6, 0.7, 0.3, 0.001, 2.5, 301)
+	Synth.tone(b, 0.0, 0.14, 190.0, 70.0, S, 0.8, 0.001, 2.4)
+	Synth.tone(b, 0.07, 0.03, 1500.0, 900.0, Q, 0.16)
+	Synth.noise(b, 0.07, 0.025, 0.4, 0.95, 0.7, 0.0005, 3.0, 302)
+	lib["lock"] = Synth.to_stream(b)
+
+	# Release: latch click, spring twang, cap popping back up.
+	b = Synth.buffer(0.24)
+	Synth.noise(b, 0.0, 0.015, 0.4, 0.95, 0.7, 0.0005, 3.0, 303)
+	Synth.tone(b, 0.0, 0.02, 2400.0, 2000.0, T, 0.2)
+	Synth.tone(b, 0.015, 0.2, 320.0, 640.0, T, 0.26, 0.002, 1.8, 34.0, 0.05)
+	Synth.tone(b, 0.015, 0.12, 640.0, 1280.0, S, 0.1, 0.002, 2.0)
+	lib["unlock"] = Synth.to_stream(b)
+
+	# Correct letter: a bright two-note keystroke; pitched up as the word grows.
+	b = Synth.buffer(0.3)
+	Synth.noise(b, 0.0, 0.02, 0.5, 0.9, 0.6, 0.001, 3.0, 304)
+	Synth.tone(b, 0.0, 0.08, 200.0, 120.0, S, 0.5, 0.001, 3.0)
+	Synth.tone(b, 0.0, 0.1, Synth.midi(79), Synth.midi(79), T, 0.3, 0.002, 1.5)
+	Synth.tone(b, 0.06, 0.22, Synth.midi(86), Synth.midi(86), T, 0.32, 0.002, 1.8)
+	Synth.tone(b, 0.06, 0.22, Synth.midi(98), Synth.midi(98), S, 0.07, 0.002, 2.4)
+	lib["typed"] = Synth.to_stream(b)
+
+	# Burned a needed key: a rubbery "bwomp", playful rather than punishing.
+	b = Synth.buffer(0.34)
+	Synth.tone(b, 0.0, 0.12, 300.0, 210.0, Q, 0.2, 0.004, 0.8, 11.0, 0.03)
+	Synth.tone(b, 0.11, 0.2, 210.0, 120.0, Q, 0.22, 0.004, 1.3, 9.0, 0.05)
+	Synth.tone(b, 0.0, 0.3, 105.0, 70.0, S, 0.3)
+	lib["burn"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.1)
+	Synth.tone(b, 0.0, 0.08, 150.0, 95.0, S, 0.5, 0.001, 2.5)
+	Synth.noise(b, 0.0, 0.03, 0.3, 0.4, 0.0, 0.001, 2.0, 305)
+	lib["bonk"] = Synth.to_stream(b)
+
+	# Escape: click, a digital warp sweeping up, and a little "whoop" on arrival.
+	b = Synth.buffer(0.5)
+	Synth.noise(b, 0.0, 0.02, 0.5, 0.9, 0.6, 0.001, 3.0, 306)
+	Synth.tone(b, 0.0, 0.05, 240.0, 140.0, S, 0.5, 0.001, 3.0)
+	Synth.tone(b, 0.02, 0.2, 260.0, 2400.0, P, 0.13, 0.004, 0.8, 42.0, 0.12)
+	Synth.tone(b, 0.02, 0.2, 520.0, 3200.0, S, 0.12, 0.004, 0.9)
+	Synth.noise(b, 0.02, 0.2, 0.2, 0.7, 0.5, 0.01, 1.2, 307, true)
+	Synth.tone(b, 0.24, 0.22, 500.0, 1150.0, S, 0.34, 0.004, 1.5)
+	Synth.tone(b, 0.24, 0.22, 1000.0, 2300.0, T, 0.08, 0.004, 1.8)
+	lib["esc_warp"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.6)
+	for i in range(6):
+		Synth.tone(b, i * 0.05, 0.14, Synth.midi(72 + i * 3), Synth.midi(72 + i * 3), T, 0.2, 0.002, 1.8)
+	Synth.noise(b, 0.0, 0.4, 0.3, 0.5, 0.3, 0.02, 1.4, 308, true)
+	Synth.tone(b, 0.0, 0.5, 90.0, 180.0, S, 0.3, 0.02, 1.2)
+	lib["unjam"] = Synth.to_stream(b)
+
+	# Enter: each held second is a rising, tightening charge tick.
+	b = Synth.buffer(0.4)
+	Synth.tone(b, 0.0, 0.36, 220.0, 330.0, T, 0.26, 0.01, 1.2)
+	Synth.tone(b, 0.0, 0.36, 440.0, 660.0, P, 0.09, 0.01, 1.4)
+	Synth.tone(b, 0.0, 0.1, 110.0, 80.0, S, 0.5, 0.001, 2.2)
+	Synth.noise(b, 0.0, 0.03, 0.4, 0.8, 0.5, 0.001, 2.5, 309)
+	lib["enter_tick"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.14)
+	Synth.tone(b, 0.0, 0.1, 180.0, 110.0, S, 0.55, 0.001, 2.6)
+	Synth.tone(b, 0.0, 0.1, 520.0, 780.0, T, 0.16, 0.003, 1.6)
+	lib["enter_arrive"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.3)
+	Synth.tone(b, 0.0, 0.26, 420.0, 150.0, T, 0.26, 0.004, 1.2, 12.0, 0.04)
+	lib["enter_break"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.7)
+	for i in range(5):
+		Synth.tone(b, i * 0.06, 0.2, Synth.midi(67 + [0, 5, 7, 12, 17][i]), Synth.midi(67 + [0, 5, 7, 12, 17][i]), T, 0.22, 0.002, 1.8)
+	Synth.tone(b, 0.0, 0.5, 130.0, 260.0, S, 0.3, 0.02, 1.2)
+	lib["word_done"] = Synth.to_stream(b)
+
+	# Out: a zap and a slide whistle down.
+	b = Synth.buffer(0.6)
+	Synth.noise(b, 0.0, 0.09, 0.5, 0.9, 0.6, 0.001, 1.5, 310)
+	Synth.tone(b, 0.0, 0.1, 1800.0, 240.0, Q, 0.14, 0.001, 1.0, 60.0, 0.2)
+	Synth.tone(b, 0.08, 0.5, 900.0, 160.0, S, 0.3, 0.01, 0.9, 7.0, 0.03)
+	lib["death"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.6)
+	for i in range(4):
+		Synth.tone(b, i * 0.08, 0.3, Synth.midi(72 + [0, 4, 7, 12][i]), Synth.midi(72 + [0, 4, 7, 12][i]), S, 0.24, 0.01, 1.6)
+		Synth.tone(b, i * 0.08, 0.2, Synth.midi(84 + [0, 4, 7, 12][i]), Synth.midi(84 + [0, 4, 7, 12][i]), T, 0.06, 0.01, 2.0)
+	lib["revive"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.2)
+	Synth.noise(b, 0.0, 0.02, 0.45, 0.85, 0.6, 0.001, 3.0, 311)
+	Synth.tone(b, 0.0, 0.09, 230.0, 130.0, S, 0.6, 0.001, 3.0)
+	Synth.tone(b, 0.02, 0.16, 880.0, 1320.0, T, 0.22, 0.003, 1.6)
+	lib["select_lock"] = Synth.to_stream(b)
+
+	b = Synth.buffer(0.26)
+	Synth.tone(b, 0.0, 0.2, 900.0, 300.0, S, 0.3, 0.004, 1.2)
+	Synth.noise(b, 0.18, 0.05, 0.4, 0.4, 0.0, 0.001, 2.0, 312)
+	Synth.tone(b, 0.18, 0.07, 200.0, 110.0, S, 0.5, 0.001, 2.6)
+	lib["spawn"] = Synth.to_stream(b)
 
 ## Tiny non-verbal critter voices: short formant-ish blips. Each character
 ## plays them at its own pitch, so the same buffers give four personalities.

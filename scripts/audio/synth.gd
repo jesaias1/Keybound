@@ -1,6 +1,6 @@
 class_name Synth
 extends RefCounted
-## Tiny offline synthesizer used to generate every sound in KEYBOUND at boot.
+## Tiny offline synthesizer used to generate every sound in Hopkey at boot.
 ## No audio files, no plugins: notes are rendered additively into float
 ## buffers and converted to looping or one-shot AudioStreamWAVs.
 

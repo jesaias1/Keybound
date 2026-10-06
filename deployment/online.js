@@ -9,8 +9,8 @@
   const emit = value => { if (events.length < 512) events.push(value); };
   const message = text => { note.textContent = text; };
   function backend() {
-    if (!window.KEYBOUND_CONVEX_URL) throw new Error('Online rooms are unavailable in this build.');
-    return client ||= new convex.ConvexClient(window.KEYBOUND_CONVEX_URL);
+    if (!window.HOPKEY_CONVEX_URL) throw new Error('Online rooms are unavailable in this build.');
+    return client ||= new convex.ConvexClient(window.HOPKEY_CONVEX_URL);
   }
   const count = () => [...peers.values()].filter(p => p.channel?.readyState === 'open').length;
   function refresh() {
@@ -143,7 +143,7 @@
       running = true; emit({ kind: 'start' }); panel.hidden = true; document.getElementById('canvas').focus();
     } catch (error) { message(error.message); refresh(); }
   };
-  window.KEYBOUND_NET = {
+  window.HOPKEY_NET = {
     openLobby() { panel.hidden = false; if (!room) message('One player hosts. Friends join with the code. Each PC controls one typist.'); },
     hideLobby() { running = true; panel.hidden = true; document.getElementById('canvas').focus(); },
     close,

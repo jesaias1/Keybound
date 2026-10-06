@@ -4,11 +4,10 @@ extends RefCounted
 
 enum State {
 	BOOT,
-	PREVIEW,        ## Phrase shown, team plans the route.
-	COUNTDOWN,      ## Critters drop in, 3-2-1.
+	SELECT,         ## Target shown; everyone picks a starting key.
+	COUNTDOWN,      ## Critters drop onto their keys, 3-2-1.
 	PLAYING,
-	CELEBRATING,    ## Enter accepted: slow-mo and cheering.
-	FAILED,         ## Timer ran out.
+	ROUND_END,      ## Enter slammed, time ran out, or a team was wiped.
 	ROUND_RESULTS,
 	MATCH_OVER,
 	PAUSED,
@@ -18,17 +17,15 @@ var current: State = State.BOOT
 var _state_before_pause: State = State.PLAYING
 
 const VALID_TRANSITIONS := {
-	State.BOOT: [State.PREVIEW],
-	State.PREVIEW: [State.COUNTDOWN, State.PAUSED],
+	State.BOOT: [State.SELECT],
+	State.SELECT: [State.COUNTDOWN, State.PAUSED],
 	State.COUNTDOWN: [State.PLAYING, State.PAUSED],
-	State.PLAYING: [State.CELEBRATING, State.FAILED, State.PAUSED],
-	State.CELEBRATING: [State.ROUND_RESULTS, State.PAUSED],
-	State.FAILED: [State.ROUND_RESULTS, State.PAUSED],
-	State.ROUND_RESULTS: [State.PREVIEW, State.MATCH_OVER, State.PAUSED],
-	State.MATCH_OVER: [State.PREVIEW],
+	State.PLAYING: [State.ROUND_END, State.PAUSED],
+	State.ROUND_END: [State.ROUND_RESULTS, State.PAUSED],
+	State.ROUND_RESULTS: [State.SELECT, State.MATCH_OVER, State.PAUSED],
+	State.MATCH_OVER: [State.SELECT],
 	State.PAUSED: [
-		State.PREVIEW, State.COUNTDOWN, State.PLAYING, State.CELEBRATING,
-		State.FAILED, State.ROUND_RESULTS,
+		State.SELECT, State.COUNTDOWN, State.PLAYING, State.ROUND_END, State.ROUND_RESULTS,
 	],
 }
 

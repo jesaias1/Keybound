@@ -1,139 +1,239 @@
 class_name GameHud
 extends CanvasLayer
+## Deliberately small. The keyboard itself carries most of the information;
+## the HUD shows each team's word, the clock, who is out, and big moments.
+## Nothing here is rebuilt per frame: the match pushes changes when they occur.
+
 signal resume_requested
 signal lobby_requested
 
-var letterbox_view: LetterboxView
-var expected_label: Label
+var strips: Array[WordStrip] = []
 var timer_label: Label
+var round_label: Label
 var score_label: Label
-var modifier_label: Label
-var players_label: Label
-var event_label: Label
-var countdown_label: Label
+var banner_label: Label
+var prompt_label: Label
+var toast_label: Label
+var chips: PlayerChips
 var overlay_panel: PanelContainer
 var overlay_title: Label
 var overlay_body: Label
+var reduced := false
 var _pause_actions: HBoxContainer
-var _event_remaining := 0.0
-var _countdown_remaining := 0.0
+var _root: Control
+var _war := false
+var _overlay_top := false
+var _words_dirty := true
+var _banner_tween: Tween
+var _toast_tween: Tween
+
+class PlayerChips extends Control:
+	var entries: Array[Dictionary] = []   # {id, color, out, connected}
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func set_entries(next: Array[Dictionary]) -> void:
+		if next != entries:
+			entries = next
+			queue_redraw()
+	func _draw() -> void:
+		var x := 0.0
+		for entry in entries:
+			var out := bool(entry.out)
+			var rect := Rect2(Vector2(x, 0.0), Vector2(148.0, 44.0))
+			DrawKit.box(self, rect, Color(0.106, 0.09, 0.153, 0.9), 14)
+			draw_circle(rect.position + Vector2(24.0, 22.0), 13.0, UiStyle.INK)
+			draw_circle(rect.position + Vector2(24.0, 22.0), 10.0, Color("#514a66") if out else entry.color)
+			var text := "P%d %s" % [int(entry.id) + 1, "OUT" if out else ("LOST" if not bool(entry.connected) else Cast.display_name(int(entry.id)))]
+			draw_string(UiStyle.DISPLAY, rect.position + Vector2(46.0, 30.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UiStyle.CORAL if out else UiStyle.CREAM)
+			x += 160.0
 
 func _ready() -> void:
 	layer = 10
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var root := Control.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(root)
-	var top := Panel.new()
-	top.position = Vector2(280, 24)
-	top.size = Vector2(1360, 242)
-	top.add_theme_stylebox_override("panel", UiStyle.panel())
-	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(top)
-	letterbox_view = LetterboxView.new()
-	letterbox_view.position = Vector2(20, 42)
-	letterbox_view.size = Vector2(1320, 150)
-	letterbox_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top.add_child(letterbox_view)
-	var heading := UiStyle.label("THE LETTERBOX", 24, true)
-	heading.position = Vector2(0, 10)
-	heading.size.x = 1360
-	top.add_child(heading)
-	expected_label = UiStyle.label("", 24)
-	expected_label.position = Vector2(20, 194)
-	expected_label.size = Vector2(1320, 36)
-	top.add_child(expected_label)
-	timer_label = _placed_label(root, "", Vector2(24, 50), Vector2(232, 55), 42)
-	score_label = _placed_label(root, "", Vector2(24, 108), Vector2(232, 90), 26)
-	modifier_label = _placed_label(root, "", Vector2(1654, 48), Vector2(240, 150), 26)
-	event_label = _placed_label(root, "", Vector2(260, 944), Vector2(1400, 40), 28)
-	players_label = _placed_label(root, "", Vector2(30, 1000), Vector2(1860, 64), 22)
-	countdown_label = _placed_label(root, "", Vector2(560, 490), Vector2(800, 120), 76)
-	countdown_label.add_theme_font_override("font", UiStyle.DISPLAY)
-	countdown_label.add_theme_color_override("font_shadow_color", UiStyle.CREAM)
-	countdown_label.add_theme_constant_override("shadow_offset_x", 3)
-	countdown_label.add_theme_constant_override("shadow_offset_y", 3)
+	_root = Control.new()
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_root)
+	timer_label = _placed("", Vector2(860, 26), Vector2(200, 64), 56, true)
+	round_label = _placed("", Vector2(760, 92), Vector2(400, 30), 20, false, UiStyle.MUTED)
+	score_label = _placed("", Vector2(1480, 44), Vector2(260, 44), 34, true, UiStyle.GOLD)
+	prompt_label = _placed("", Vector2(260, 962), Vector2(1400, 44), 30, true, UiStyle.CREAM)
+	toast_label = _placed("", Vector2(360, 904), Vector2(1200, 44), 28, true, UiStyle.CREAM)
+	banner_label = _placed("", Vector2(160, 380), Vector2(1600, 240), 150, true)
+	banner_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	banner_label.pivot_offset = Vector2(800, 120)
+	for label in [timer_label, prompt_label, toast_label, banner_label, score_label]:
+		label.add_theme_color_override("font_outline_color", UiStyle.INK)
+		label.add_theme_constant_override("outline_size", 12)
+	banner_label.add_theme_constant_override("outline_size", 22)
+	chips = PlayerChips.new()
+	chips.position = Vector2(28, 1018)
+	chips.size = Vector2(700, 44)
+	_root.add_child(chips)
 	overlay_panel = PanelContainer.new()
-	overlay_panel.position = Vector2(510, 364)
-	overlay_panel.size = Vector2(900, 342)
+	overlay_panel.position = Vector2(480, 360)
 	overlay_panel.add_theme_stylebox_override("panel", UiStyle.panel())
-	root.add_child(overlay_panel)
+	_root.add_child(overlay_panel)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 22)
+	box.add_theme_constant_override("separation", 10)
 	overlay_panel.add_child(box)
-	overlay_title = UiStyle.label("", 48, true)
+	overlay_title = UiStyle.label("", 56, true, UiStyle.GOLD)
 	box.add_child(overlay_title)
-	overlay_body = UiStyle.label("", 27)
-	overlay_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	overlay_body = UiStyle.label("", 28)
 	box.add_child(overlay_body)
 	_pause_actions = HBoxContainer.new()
 	_pause_actions.alignment = BoxContainer.ALIGNMENT_CENTER
-	_pause_actions.add_theme_constant_override("separation", 22)
+	_pause_actions.add_theme_constant_override("separation", 26)
 	box.add_child(_pause_actions)
-	_pause_actions.add_child(UiStyle.button("RESUME", func() -> void: resume_requested.emit()))
-	_pause_actions.add_child(UiStyle.button("LOBBY", func() -> void: lobby_requested.emit()))
+	_pause_actions.add_child(UiStyle.button("RESUME", func() -> void: resume_requested.emit(), UiStyle.MINT))
+	_pause_actions.add_child(UiStyle.button("QUIT TO LOBBY", func() -> void: lobby_requested.emit()))
 	hide_overlay()
 
-func _placed_label(root: Control, value: String, point: Vector2, extent: Vector2, font_size: int) -> Label:
-	var label := UiStyle.label(value, font_size)
+func _placed(value: String, point: Vector2, extent: Vector2, font_size: int, display := false, color := UiStyle.CREAM) -> Label:
+	var label := UiStyle.label(value, font_size, display, color)
 	label.position = point
 	label.size = extent
-	root.add_child(label)
+	_root.add_child(label)
 	return label
 
-func _process(delta: float) -> void:
-	_event_remaining = maxf(_event_remaining - delta, 0.0)
-	if _event_remaining <= 0.0:
-		event_label.text = ""
-	_countdown_remaining = maxf(_countdown_remaining - delta, 0.0)
-	if _countdown_remaining <= 0.0:
-		countdown_label.text = ""
+func setup(teams: Array[TeamState], war: bool) -> void:
+	_war = war
+	for index in range(teams.size()):
+		var strip := WordStrip.new()
+		strip.color = teams[index].color(war)
+		strip.reduced = reduced
+		if war:
+			strip.size = Vector2(770, 150)
+			strip.position = Vector2(40 if index == 0 else 1110, 16)
+			strip.title = "TEAM %s" % teams[index].display_name()
+			strip.wins = 0
+		else:
+			strip.size = Vector2(1000, 150)
+			strip.position = Vector2(460, 16)
+			strip.title = "TARGET"
+		_root.add_child(strip)
+		_root.move_child(strip, 0)
+		strips.push_back(strip)
+	if not war:
+		# Co-op: clock to the left of the word, score to the right.
+		timer_label.position = Vector2(210, 34)
+		round_label.position = Vector2(110, 100)
+	score_label.visible = not war
 
-func update_letterbox(snapshot: Dictionary, caps: bool, shift: bool) -> void:
-	letterbox_view.update_snapshot(snapshot)
-	var hint := TypingRules.modifier_hint(str(snapshot.expected), caps, shift)
-	if snapshot.has_error:
-		expected_label.text = "A mistake stays in the box. Hold BACKSPACE to undo and repair."
-	elif snapshot.can_submit:
-		expected_label.text = "Perfect match! Hold ENTER to send it."
-	elif hint == "shift":
-		expected_label.text = "A friend holds SHIFT while you charge the highlighted key."
-	elif hint == "caps_off":
-		expected_label.text = "Turn CAPS LOCK off for the next letter."
-	elif hint == "release_shift":
-		expected_label.text = "Release SHIFT for the next lowercase letter."
-	else:
-		expected_label.text = "Stand on the highlighted key for 5 seconds. Jump across holes."
+## Full state push; called only when the match flags a change.
+func refresh(match_node: MatchController) -> void:
+	var playing := match_node.state_machine.current == MatchStateMachine.State.PLAYING
+	for team in match_node.teams:
+		var strip := strips[team.id]
+		strip.set_word(team.word.target, team.word.typed)
+		strip.set_live(playing and not team.word.is_complete())
+		strip.set_golden(team.golden_index if not team.golden_hit else -1)
+		strip.win_target = match_node.options.war_target
+		if _war:
+			strip.set_wins(team.wins)
+		var caps := match_node.caps_on
+		var shift := match_node.shift_held
+		var hint := TypingRules.modifier_hint(team.word.next_char(), caps, shift)
+		if team.word.is_complete() and playing:
+			strip.set_status("EVERYONE ON ENTER  %d/%d  —  HOLD %s" % [team.on_enter, team.alive, str(snappedf(team.enter_hold.duration, 0.1)).trim_suffix(".0")], UiStyle.MINT)
+		elif hint == "shift":
+			strip.set_status("SYMBOL — someone has to stand on Shift", UiStyle.GOLD)
+		elif hint == "unshift":
+			strip.set_status("SOMEONE IS ON SHIFT — numbers need it released", UiStyle.GOLD)
+		elif hint == "upper":
+			strip.set_status("NEEDS A CAPITAL — %s" % ("Shift is cancelling Caps Lock" if caps and shift else "stand on Shift, or tap Caps Lock"), UiStyle.GOLD)
+		elif hint == "lower":
+			strip.set_status("NEEDS LOWERCASE — %s" % ("tap Caps Lock, or stand on Shift" if caps else "someone is standing on Shift"), UiStyle.GOLD)
+		elif team.combo >= 2:
+			strip.set_status("COMBO x%d  —  Enter hold %ss" % [team.combo, str(snappedf(team.enter_hold.duration, 0.1))], UiStyle.GOLD)
+		elif caps or shift:
+			strip.set_status("%s%s" % ["CAPS LOCK ON" if caps else "", ("  +  " if caps else "") + "SHIFT HELD" if shift else ""], UiStyle.MUTED)
+		else:
+			strip.set_status("", UiStyle.MUTED)
+	round_label.text = ("ROUND %d   •   FIRST TO %d" % [match_node.round_index + 1, match_node.options.war_target]) if _war else "ROUND %d / %d" % [match_node.round_index + 1, match_node.rounds.size()]
+	if not _war:
+		score_label.text = "%05d" % match_node.score
+	var entries: Array[Dictionary] = []
+	for player in match_node.players:
+		entries.push_back({"id": player.player_id, "color": player.pose.body, "out": not player.alive, "connected": player.connected})
+	chips.set_entries(entries)
+	_words_dirty = true
 
-func update_match(time_left: float, score: int, round_index: int, total: int, caps: bool, shift: bool) -> void:
-	timer_label.text = "%02d:%02d" % [int(ceil(time_left)) / 60, int(ceil(time_left)) % 60]
-	score_label.text = "ROUND %d / %d\nSCORE %05d" % [round_index + 1, total, score]
-	modifier_label.text = "CAPS %s\nSHIFT %s\nEsc / Start: pause" % ["ON" if caps else "off", "HELD" if shift else "off"]
+func mark_words_dirty() -> void:
+	_words_dirty = true
 
-func update_players(players: Array[PlayerController]) -> void:
-	var lines: Array[String] = []
-	for player in players:
-		var status := "disconnected" if not player.connected else ("respawning" if player.falling else InputSource.device_label(player.device_id))
-		lines.push_back("P%d %s  %s" % [player.player_id + 1, Cast.display_name(player.player_id), status])
-	players_label.text = "    •    ".join(lines)
+func mark_players_dirty() -> void:
+	pass  # Player chips are rebuilt by the next refresh(); kept for call symmetry.
 
-func show_event(value: String, color := UiStyle.INK, duration := GameConfig.EVENT_DURATION) -> void:
-	event_label.text = value
-	event_label.add_theme_color_override("font_color", color)
-	_event_remaining = duration
+## Padlocks follow the physical keys; coalesced to at most once per frame.
+func refresh_words_if_dirty(match_node: MatchController) -> void:
+	if not _words_dirty:
+		return
+	_words_dirty = false
+	for team in match_node.teams:
+		strips[team.id].set_jams(match_node.board)
 
-func show_countdown(value: String) -> void:
-	countdown_label.text = value
-	_countdown_remaining = GameConfig.COUNTDOWN_DURATION
+func pop_letter(team: int) -> void:
+	if team < strips.size():
+		strips[team].pop()
 
-func show_overlay(title: String, body: String, paused := false) -> void:
+func shake_word(team: int) -> void:
+	if team < strips.size():
+		strips[team].shake()
+
+func set_timer(seconds: int, urgent: bool) -> void:
+	timer_label.text = "%d:%02d" % [seconds / 60, seconds % 60]
+	timer_label.add_theme_color_override("font_color", UiStyle.CORAL if urgent else UiStyle.CREAM)
+
+func set_prompt(text: String) -> void:
+	prompt_label.text = text
+
+func banner(text: String, color: Color, duration := 1.0, font_size := 150) -> void:
+	if _banner_tween != null:
+		_banner_tween.kill()
+	banner_label.text = text
+	banner_label.add_theme_font_size_override("font_size", font_size)
+	banner_label.add_theme_color_override("font_color", color)
+	banner_label.modulate = Color.WHITE
+	banner_label.scale = Vector2.ONE if reduced else Vector2(1.5, 1.5)
+	_banner_tween = create_tween()
+	_banner_tween.tween_property(banner_label, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_banner_tween.tween_interval(maxf(duration - 0.36, 0.0))
+	_banner_tween.tween_property(banner_label, "modulate", Color(1, 1, 1, 0), 0.2)
+	_banner_tween.tween_callback(func() -> void: banner_label.text = "")
+
+func toast(text: String, duration := GameConfig.EVENT_DURATION) -> void:
+	if _toast_tween != null:
+		_toast_tween.kill()
+	toast_label.text = text
+	toast_label.modulate = Color.WHITE
+	_toast_tween = create_tween()
+	_toast_tween.tween_interval(duration)
+	_toast_tween.tween_property(toast_label, "modulate", Color(1, 1, 1, 0), 0.25)
+	_toast_tween.tween_callback(func() -> void: toast_label.text = "")
+
+## The card shrinks to fit whatever it says. `top` tucks it above the keyboard
+## so a replay can play underneath.
+func show_overlay(title: String, body: String, paused := false, top := false) -> void:
 	overlay_title.text = title
 	overlay_body.text = body
+	overlay_body.visible = not body.is_empty()
 	_pause_actions.visible = paused
+	overlay_title.add_theme_font_size_override("font_size", 40 if top else 54)
+	overlay_body.add_theme_font_size_override("font_size", 22 if top else 27)
 	overlay_panel.visible = true
-	countdown_label.text = ""
+	_overlay_top = top
+	_place_overlay()
+	# Label sizes settle a frame after their text changes; place again then.
+	_place_overlay.call_deferred()
+
+func _place_overlay() -> void:
+	if not overlay_panel.visible:
+		return
+	overlay_panel.reset_size()
+	var extent := overlay_panel.size
+	overlay_panel.position = Vector2((1920.0 - extent.x) * 0.5, 8.0 if _overlay_top else (1080.0 - extent.y) * 0.5 - 30.0)
 
 func hide_overlay() -> void:
 	overlay_panel.visible = false

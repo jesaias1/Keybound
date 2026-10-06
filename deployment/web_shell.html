@@ -4,32 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>@@GAME_TITLE@@</title>
+  <link rel="icon" href="index.icon.png">
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: #e5d4c0; color: #34263f; font: 16px system-ui, sans-serif; display: grid; place-content: center; gap: 16px; }
-    #stage { position: relative; width: min(96vw, calc(177.7778vh - 177.7778px)); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 18px; background: #e5d4c0; box-shadow: 0 10px 34px #34263f30; }
+    body { margin: 0; min-height: 100vh; background: #1b1727; color: #f6eedf; font: 16px system-ui, sans-serif; display: grid; place-content: center; gap: 16px; }
+    #stage { position: relative; width: min(96vw, calc(177.7778vh - 177.7778px)); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 18px; background: #1b1727; box-shadow: 0 0 0 3px #463d5e, 0 14px 40px #0008; }
     canvas { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
-    #welcome { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 24px; background: #fff4e3; }
-    h1 { font-size: clamp(28px, 5vw, 72px); margin: 0 0 14px; font-weight: 900; }
-    p { line-height: 1.5; }
-    button { color: inherit; font: inherit; font-weight: 700; border: 2px solid #b69b77; background: #f4d599; border-radius: 12px; padding: 12px 26px; cursor: pointer; }
-    button:hover { background: #ffe8b6; }
-    button:focus-visible { outline: 3px solid #796193; outline-offset: 3px; }
-    button:disabled { cursor: wait; opacity: .65; }
+    #welcome { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 24px; background: radial-gradient(circle at 50% 35%, #332c45, #1b1727 70%); }
+    h1 { font-size: clamp(28px, 5vw, 72px); margin: 0 0 14px; font-weight: 900; letter-spacing: .12em; }
+    p { line-height: 1.5; color: #a79fbb; }
+    /* Buttons are keycaps: a skirt underneath that the face sinks into. */
+    button { color: #2b2038; font: inherit; font-weight: 800; letter-spacing: .04em; border: 0; background: #f6eedf; border-radius: 12px; padding: 12px 26px; cursor: pointer; box-shadow: 0 7px 0 #8d8472, 0 10px 14px #0006; transition: transform .06s, box-shadow .06s; }
+    button:hover { background: #fffaf0; }
+    button:active { transform: translateY(5px); box-shadow: 0 2px 0 #8d8472, 0 3px 6px #0006; }
+    button:focus-visible { outline: 3px solid #ffd24a; outline-offset: 4px; }
+    button:disabled { cursor: wait; opacity: .55; }
+    #play, #online-start { background: #7fe0a0; box-shadow: 0 7px 0 #49815c, 0 10px 14px #0006; font-size: 20px; padding: 14px 44px; }
     #status { max-width: 650px; white-space: pre-wrap; }
-    progress { width: min(400px, 65vw); accent-color: #796193; margin: 14px auto 0; }
-    footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; padding: 0 4px; }
+    progress { width: min(400px, 65vw); accent-color: #7fe0a0; margin: 14px auto 0; }
+    footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; padding: 0 4px 8px; color: #a79fbb; }
     footer button { padding: 8px 18px; }
-    #stage:fullscreen { width: 100vw; height: 100vh; border-radius: 0; display: grid; place-content: center; background: #241e39; }
+    #stage:fullscreen { width: 100vw; height: 100vh; border-radius: 0; display: grid; place-content: center; background: #1b1727; }
     #stage:fullscreen canvas { width: min(100vw, 177.7778vh); height: min(100vh, 56.25vw); }
     [hidden] { display: none !important; }
-    #online-lobby { position: absolute; inset: 0; background: #fff4e3f5; display: grid; place-content: center; text-align: center; padding: 24px; }
-    #online-lobby h2 { font-size: 36px; margin: 0 0 12px; }
-    #online-setup { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-    #join-code { font: inherit; width: 150px; text-transform: uppercase; border: 2px solid #b69b77; border-radius: 12px; padding: 12px; }
-    #room-code { display: block; font: bold 48px monospace; letter-spacing: 6px; margin: 14px; user-select: all; }
+    #online-lobby { position: absolute; inset: 0; background: #1b1727f2; display: grid; place-content: center; text-align: center; padding: 24px; }
+    #online-lobby h2 { font-size: 36px; margin: 0 0 18px; letter-spacing: .08em; }
+    #online-setup { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: start; }
+    #join-code { font: inherit; font-weight: 700; width: 150px; text-transform: uppercase; color: #f6eedf; background: #2a2339; border: 2px solid #463d5e; border-radius: 12px; padding: 12px; }
+    #room-code { display: block; font: bold 48px monospace; letter-spacing: 6px; margin: 18px; user-select: all; color: #ffd24a; }
     #online-status { max-width: 650px; min-height: 48px; }
-    #online-close { margin: 20px auto 0; background: #e5d4c0; }
+    #online-close { margin: 24px auto 0; background: #cdc6dc; box-shadow: 0 7px 0 #6f6885, 0 10px 14px #0006; }
   </style>
   $GODOT_HEAD_INCLUDE
 </head>
@@ -38,9 +42,9 @@
     <canvas id="canvas" width="1920" height="1080" tabindex="0" aria-label="@@GAME_TITLE@@ game"></canvas>
     <section id="welcome">
       <h1>@@GAME_TITLE@@</h1>
-      <p>Tiny typists. Giant keyboard. Beautiful mistakes.</p>
+      <p>Tiny hoppers. One giant keyboard. Every step jams a key.</p>
       <button id="play" type="button">PLAY</button>
-      <p id="status" role="status">WASD / arrows to move · Space to jump · Controllers welcome</p>
+      <p id="status" role="status">WASD / arrows to move · Space to jump · Step on a key to press it</p>
       <progress id="progress" hidden></progress>
       <noscript>JavaScript is required to run this game.</noscript>
     </section>
@@ -57,7 +61,7 @@
     <button id="online-close" type="button">LEAVE / CLOSE</button>
   </section>
   <footer>
-    <span>2–4 typists · Local co-op or online rooms · Keep the host's tab open</span>
+    <span>Local co-op and 1v1 / 2v2 War · Online co-op rooms · Keep the host's tab open</span>
     <button id="fullscreen" type="button">FULLSCREEN</button>
   </footer>
   <script src="$GODOT_URL"></script>
