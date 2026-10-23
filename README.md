@@ -1,9 +1,33 @@
-# Hopkey
+<p align="center"><img src="assets/brand/hopkey_logo.png" alt="Hopkey" width="420"></p>
+<p align="center"><b>Tiny critters hop across a giant keyboard, typing words by where they step, while every key they use jams behind them.</b></p>
 
-![Hopkey](assets/brand/hopkey_logo.png)
+<p align="center">
+  <a href="https://keybound-kappa.vercel.app"><b>Play in the browser</b></a>
+</p>
 
-Tiny critters hop across a giant keyboard, typing words by where they step —
-while every key they use jams behind them.
+<p align="center">
+  <img alt="Godot 4" src="https://img.shields.io/badge/Godot-4.7-478cbf?style=flat-square&logo=godotengine&logoColor=white">
+  <img alt="GDScript" src="https://img.shields.io/badge/GDScript-478cbf?style=flat-square">
+  <img alt="Co-op and War" src="https://img.shields.io/badge/modes-co--op_and_1v1_%2F_2v2_War-ff7f6e?style=flat-square">
+</p>
+
+![Hopkey in play: a critter hops across a giant keyboard towards the target word](docs/readme/game.webp)
+
+Hopkey is a party game for two to four players on one keyboard or screen. A word appears, and the team has to spell it by landing on the right keys in order. Every key you step on jams for five seconds and becomes a wall, so the route you take matters as much as the letters. Every round ends with a slow-motion replay, and **Hopkey: WAR** pits two teams against each other on one shared keyboard.
+
+<p align="center"><img src="docs/readme/menu.webp" alt="Main menu with Co-op, War, Play online, How to play and Settings" width="640"></p>
+
+## Highlights
+
+- **Step to press, jump to save.** Landing on a key types it; flying over a key leaves it untouched.
+- **Four critters with perks:** PIP jumps further, DOT can stand longer, BUN has a spare Escape, MOSS cannot be pushed.
+- **Real keyboard rules.** Shift and Caps Lock work like the real thing, TAB dashes along a row, ENTER sends the word together.
+- **Online play** in the browser (co-op rooms) and on desktop (host a game on the LAN or over the internet).
+- **Tunable rounds.** The host can switch add-ons on or off: golden key, combo, power-ups, row jams, caps storm and sabotage.
+- **Built with Godot 4.7, no plugins and no paid services,** with a headless test runner, visual smoke tests and a performance probe.
+
+## The rules in full
+
 
 - **Step to press.** Land on your next letter to type it.
 - **Keys jam.** Leave a key and it jams for 5 seconds. Jammed keys are walls;
